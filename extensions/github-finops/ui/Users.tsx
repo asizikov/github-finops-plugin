@@ -20,13 +20,13 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
     <div className="user-result-heading"><h3>{user ? `@${user.login}` : `@${login}`}</h3><RefreshButton state={state} /></div>
     <SnapshotStatus state={state} />
     {user && impact && <div aria-busy={state.loading}>
-      <p className="muted">{month} / {user.accountType} / Budget-tracked amounts in USD, not credit quantities or net billed spending.</p>
+      <p className="field-note">{month} / {user.accountType} / Budget-tracked amounts in USD, not credit quantities or net billed spending.</p>
       <UserAttribution user={user} relationships={relationships} cached={state.snapshot?.cache.source === 'cached'}
         openCenter={openCenter} openBudget={openBudget} />
       <section className="resource-section"><h3>Cost center memberships</h3>
-        <p className="caption">Memberships reported for this username. Membership alone does not establish which organization or cost center pays for a request.</p>
+        <p className="section-intro">Reported memberships do not establish which organization or cost center pays for a request.</p>
         {user.memberships.length ? <div className="user-memberships">{user.memberships.map(center =>
-          <div className="notice" key={center.id}><button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button><p className="caption">Membership API / matched by cost center ID</p></div>)}</div> :
+          <div className="membership-item" key={center.id}><button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button><p className="caption">Membership API / matched by cost center ID</p></div>)}</div> :
           <p className="empty-results">{user.attribution?.evidence.direct.state === 'unavailable'
             ? 'Membership evidence is unavailable or incomplete. No absence of assignments is inferred.'
             : "No cost center memberships returned. This does not establish that the user's usage is unallocated."}</p>}
@@ -35,8 +35,8 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
         disabled={state.loading || state.blocked} refresh={() => void state.refresh(true)} openCenter={openCenter} />
       <UserBudgetExplanation user={user} impact={impact} openBudget={openBudget} />
       <section className="resource-section"><h3>Per-user controls and defaults</h3>
-        <p className="caption">An individual override can supersede cost center and enterprise per-user defaults. Only the API-selected effective budget is marked active. Saved configurations outside the user-filtered response are candidates, not confirmed applicable controls.</p>
-        {impact.controls.length ? <div className="table-scroll center-table"><table>
+        <p className="section-intro">Only GitHub's selected budget is marked effective. Other saved controls are candidates, not confirmed applicable.</p>
+        {impact.controls.length ? <div className="table-scroll center-table wide-table" tabIndex={0} role="region" aria-label="Per-user controls and defaults"><table>
           <caption className="sr-only">AI Credits per-user controls, defaults and precedence</caption>
           <thead><tr><th scope="col">Budget</th><th scope="col">Limit / user</th><th scope="col">Status</th><th scope="col">Enforcement</th></tr></thead>
           <tbody>{impact.controls.map(({budget,center,state: status,source}) => <tr key={budget.id}>
@@ -50,10 +50,13 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
           </tr>)}</tbody>
         </table></div> : <p className="empty-results">No verified per-user AI Credits candidates. Missing configuration is not an unlimited allowance.</p>}
         {impact.excluded > 0 && <p className="caption">{impact.excluded} unmatched user-filtered candidate{impact.excluded === 1 ? '' : 's'} omitted; the user filter alone is not proof of applicability.</p>}
+        <details className="section-details"><summary>How per-user controls take precedence</summary>
+          <p>An individual override can supersede cost center and enterprise per-user defaults. Only the API-selected effective budget is marked active. Saved configurations outside the user-filtered response are candidates, not confirmed applicable controls.</p>
+        </details>
       </section>
       <section className="resource-section"><h3>Shared metered spending budgets</h3>
-        <p className="caption">Monthly metered AI Credits spending thresholds shared across the enterprise or cost center, not this user's allowance or extra personal credit. Included credits are separate. Alerts-only budgets notify without stopping spending.</p>
-        {impact.guardrails.length ? <div className="table-scroll center-table"><table>
+        <p className="section-intro">Shared monthly metered spending thresholds, not personal allowances. Applicability to this user is unconfirmed.</p>
+        {impact.guardrails.length ? <div className="table-scroll center-table wide-table" tabIndex={0} role="region" aria-label="Shared metered spending budgets"><table>
           <caption className="sr-only">Shared monthly AI Credits spending budgets; applicability to this user is unconfirmed</caption>
           <thead><tr><th scope="col">Budget</th><th scope="col">Shared spending budget</th><th scope="col">Applicability</th><th scope="col">Control</th></tr></thead>
           <tbody>{impact.guardrails.map(({budget,center,reason}) => <tr key={budget.id}>
@@ -66,9 +69,13 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
           </tr>)}</tbody>
         </table></div> : <p className="empty-results">No matching saved guardrail candidates. This does not establish that no spending guardrails exist.</p>}
         <p className="caption">{relationships?.lists.budgets ? `Complete budget list saved ${new Date(relationships.lists.budgets.fetchedAt).toLocaleString()}; may be stale.` :
-          'The complete budget list has not been loaded. Open Budgets separately to load it; lookup does not fetch it automatically.'} Organization/repository billing assignment and additional guardrails are not resolved. Other product budgets are not treated as controls on the AI Credits bundle.</p>
+          'The complete budget list has not been loaded. Open Budgets separately to load it; lookup does not fetch it automatically.'}</p>
         {relationships?.lists.budgets?.error && <Flash variant="danger">{relationships.lists.budgets.error}</Flash>}
         {relationships?.lists.centers?.error && <Flash variant="danger">{relationships.lists.centers.error}</Flash>}
+        <details className="section-details"><summary>How shared spending budgets apply</summary>
+          <p>These are monthly metered AI Credits spending thresholds shared across the enterprise or cost center, not this user's allowance or extra personal credit. Included credits are separate. Alerts-only budgets notify without stopping spending.</p>
+          <p>Organization/repository billing assignment and additional guardrails are not resolved. Other product budgets are not treated as controls on the AI Credits bundle.</p>
+        </details>
       </section>
     </div>}
   </section>;
@@ -84,11 +91,11 @@ export default function Users({lookup,setLookup,openCenter,openBudget}: {
     catch (error) {setError(error instanceof Error ? error.message : 'Enter a GitHub username.');}
   }
   return <main>
-    <div className="overview-heading"><div><div className="eyebrow">CONFIGURATION</div><h2>Users</h2><p className="muted">Look up one user's cost centers and AI Credits budget controls.</p></div></div>
+    <div className="overview-heading"><div><h2>Users</h2><p className="muted">Look up one user's cost centers and AI Credits budget controls.</p></div></div>
     <form className="user-search" onSubmit={submit}>
       <label htmlFor="user-lookup">GitHub username</label>
       <div><TextInput id="user-lookup" block value={lookup.query} onChange={event => setLookup({...lookup,query:event.target.value})} placeholder="username or @username" autoCapitalize="off" autoCorrect="off" spellCheck={false} aria-describedby="user-lookup-help" /><Button type="submit">Search</Button></div>
-      <p id="user-lookup-help" className="caption">Saved users load from local SQLite without querying GitHub. New lookups resolve and cache read-only billing data; Refresh checks for changes.</p>
+      <p id="user-lookup-help" className="caption">Saved users load locally. New lookups query GitHub and cache billing data; Refresh checks for changes.</p>
     </form>
     {error && <div className="error" role="alert"><Flash variant="danger">{error}</Flash></div>}
     {lookup.login && <UserResult key={lookup.login} login={lookup.login} openCenter={openCenter} openBudget={openBudget} />}

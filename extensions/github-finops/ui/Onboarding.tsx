@@ -46,9 +46,9 @@ export default function Onboarding({startup, connected}: {startup: Startup; conn
   const install = startup.platform === 'darwin' ? 'brew install gh' : startup.platform === 'win32'
     ? 'winget install --id GitHub.cli --exact' : null;
   const cooling = Boolean(retryAt && Date.parse(retryAt) > now);
-  return <main>
-    <div className="overview-heading"><div><div className="eyebrow">GET STARTED</div><h2>Connect your enterprise</h2>
-      <p className="muted">Check read-only access, then load your enterprise overview.</p></div></div>
+  return <main className="onboarding-page">
+    <div className="overview-heading"><div><h2>Connect your enterprise</h2>
+      <p className="muted">Verify access, then load your enterprise overview.</p></div></div>
     <section className="budget-card settings-section">
       <form className="onboarding-form" onSubmit={event => {event.preventDefault();void check();}}>
         <label htmlFor="enterprise-url">Enterprise URL</label>
@@ -73,8 +73,10 @@ export default function Onboarding({startup, connected}: {startup: Startup; conn
     <section className="budget-card settings-section"><h3>Need help connecting?</h3>
       <p>Ask Copilot to run <code>github-finops-plugin:finops-init</code> for guided setup. No installation, login, or scope change runs automatically.</p>
       {installation?.installed === false && <p className="caption">Install GitHub CLI using the <a href="https://cli.github.com/" target="_blank" rel="noreferrer">official platform instructions</a>{install && <>; on this platform, <code>{install}</code> is an option</>}. Ask before installing software.</p>}
-      <p className="caption">Use gh authentication for the displayed host and an account with enterprise billing read access. Environment tokens override stored credentials and cannot be elevated in place. SSO, enterprise roles, policies, and API availability can also restrict access.</p>
-      <p className="caption">Billing and user snapshots are stored locally in SQLite. Credentials stay in the backend, never in this page. No enterprise settings are changed.</p>
+      <details className="section-details"><summary>Authentication and local data</summary>
+        <p>Use gh authentication for the displayed host and an account with enterprise billing read access. Environment tokens override stored credentials and cannot be elevated in place. SSO, enterprise roles, policies, and API availability can also restrict access.</p>
+        <p>Billing and user snapshots are stored locally in SQLite. Credentials stay in the backend, never in this page. No enterprise settings are changed.</p>
+      </details>
     </section>
   </main>;
 }
