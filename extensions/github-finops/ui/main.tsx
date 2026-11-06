@@ -11,6 +11,7 @@ import Users, {type UserLookup} from './Users';
 import Settings from './Settings';
 import Onboarding, {type Startup} from './Onboarding';
 import AttentionQueue from './AttentionQueue';
+import UpdateReminder, {usePluginUpdates} from './UpdateReminder';
 import type {ListState} from './pagination.mjs';
 
 type Budget = {
@@ -142,6 +143,7 @@ type Page = 'Overview' | 'Cost Centers' | 'Budgets' | 'Users' | 'Settings';
 type Route = {page: Page; id?: string};
 
 function App() {
+  const updates = usePluginUpdates();
   const [startup,setStartup] = useState<Startup | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -181,7 +183,7 @@ function App() {
       <div className="page-scroll" tabIndex={0} role="region" aria-label={startup?.hasOverview ? `${page} page content` : 'Connect your enterprise'} key={`${startup?.hasOverview}-${page}-${route.id ?? ''}`}>
       {!startup ? <main><h2>GitHub FinOps</h2><p role="status">Reading local startup information...</p></main> : !startup.hasOverview ?
         <Onboarding startup={startup} connected={() => setStartup({...startup,hasOverview:true})} /> :
-      page === 'Overview' ? <OverviewPage openBudget={id => open({page:'Budgets',id})} /> : page === 'Settings' ? <Settings cleared={() => {
+      page === 'Overview' ? <OverviewPage openBudget={id => open({page:'Budgets',id})} /> : page === 'Settings' ? <Settings updates={updates.status} updateError={updates.error} cleared={() => {
         setUserLookup({query:'',login:null});setCenterList({query:'',page:1});setBudgetList({query:'',page:1});
         setHistory([{page:'Overview'}]);setStartup({...startup,hasOverview:false,error:null});
       }} /> : page === 'Cost Centers' ?
@@ -190,6 +192,7 @@ function App() {
         <Users lookup={userLookup} setLookup={setUserLookup} openCenter={id => open({page:'Cost Centers',id})} openBudget={id => open({page:'Budgets',id})} />}
       </div>
     </div>
+    <UpdateReminder status={updates.error ? null : updates.status} changed={updates.setStatus} />
   </BaseStyles></ThemeProvider>;
 }
 

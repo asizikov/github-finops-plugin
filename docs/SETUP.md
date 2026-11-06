@@ -225,13 +225,48 @@ SQLite file location; Open reveals that file on macOS/Windows or opens its paren
 folder on Linux. Only this backend-selected cache location can be opened.
 Unsupported systems and file-manager errors are reported explicitly.
 
-`package.json` is the authoritative Semantic Versioning source.
+Root `VERSION` is the authoritative installed/published Semantic Versioning file.
 Use `npm version patch --no-git-tag-version` (or `minor`/`major` as
-appropriate) to update package/lock versions; the version hook synchronizes
-`plugin.json`. Builds reject mismatched manifest versions. Settings reads the
-version at runtime, plus the development checkout's short Git revision and
+appropriate) to update it: the version hook synchronizes `VERSION` and
+`plugin.json` with npm's package/lock versions. Do not edit the copies separately.
+Builds reject mismatched versions. Commit all version files and rebuilt assets
+together when publishing to `main`; no release bump is needed for local development.
+Settings reads the local `VERSION` at runtime, plus the checkout's short Git revision and
 working-tree state when available. Distributed copies without their own Git
 repository show no development revision; builds do not embed a precommit hash.
+
+### Updating the plugin
+
+The canvas checks the public repository's
+[`main/VERSION`](https://raw.githubusercontent.com/asizikov/github-finops-plugin/main/VERSION)
+on open and every 24 hours while open. Checks are backend-only, unauthenticated,
+limited to 5 seconds and 200 bytes, and never send enterprise data or credentials.
+Successful and failed attempts are cached for 24 hours in user-local
+`$COPILOT_HOME/extensions/github-finops/artifacts/updates.json` (default
+`~/.copilot`), separate from billing/authentication caches. Settings shows the
+last successful public check or a nonblocking error; offline/invalid responses
+never imply up-to-date. Only a strictly newer SemVer offers a bottom-right,
+nonmodal reminder. Dismissal is saved for that exact version across restarts;
+a later newer version can appear. Closing the canvas clears its check timer.
+
+**How to update:** for a CLI-managed installation, run the documented
+[`copilot plugin update`](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference)
+command:
+
+```sh
+copilot plugin update github-finops-plugin@github-finops
+```
+
+Reopen the canvas after updating and verify its installed version in Settings.
+For a Copilot desktop-managed installation, open **Customize > Installed** and
+find **github-finops-plugin** in the **github-finops** marketplace; use the update
+action if your app offers it. Desktop update availability depends on your app
+version. No desktop update deep link or automatic upgrade is assumed: the
+reminder opens these instructions, never an installer, and does not change files.
+The [installation links](../README.md#install) remain explicit confirmation flows,
+not guaranteed upgrades. Local development copies must be updated by their owner.
+
+### Connection checks
 
 Opening Settings does not query GitHub. Check connection explicitly checks
 authentication, configured enterprise identity, billing budgets, cost centers,

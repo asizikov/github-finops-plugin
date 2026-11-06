@@ -5,6 +5,7 @@ import { validateInput } from "./budgets.mjs";
 import { cachedOverview, databasePath, cacheControls } from "./cache.mjs";
 import {versionInfo, authSource, revealDatabase} from "./settings.mjs";
 import {readTarget, saveTarget, cliStatus, parseEnterpriseUrl, canLoadOverview} from "./onboarding.mjs";
+import {updateChecker} from "./updates.mjs";
 
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -31,6 +32,7 @@ export async function startServer(input, load = cachedOverview, {
     version = versionInfo, reveal = revealDatabase, dbPath = databasePath,
     restoreTarget = readTarget, persistTarget = saveTarget, cli = cliStatus,
     controlCache = cacheControls,
+    updates = updateChecker,
 } = {}) {
     let config = null;
     let startupError = null;
@@ -57,6 +59,28 @@ export async function startServer(input, load = cachedOverview, {
             return;
         }
         const route = req.url?.startsWith(prefix) ? req.url.slice(prefix.length) : null;
+        if ((route === "updates" && req.method === "GET") || (route === "updates/dismiss" && req.method === "POST")) {
+            res.setHeader("Content-Type", "application/json");
+            if (req.method === "POST" && req.headers.origin !== `http://${req.headers.host}`) {
+                res.writeHead(403).end(JSON.stringify({error: "Dismissing an update requires a same-origin request."}));
+                return;
+            }
+            try {
+                if (req.method === "GET") res.end(JSON.stringify(await updates.check()));
+                else {
+                    let body = "";
+                    for await (const chunk of req) {
+                        body += chunk;
+                        if (Buffer.byteLength(body) > 512) throw new Error("Update dismissal is too large.");
+                    }
+                    res.end(JSON.stringify(await updates.dismiss(JSON.parse(body).version)));
+                }
+            } catch (error) {
+                console.error("Plugin update status failed:", error);
+                res.writeHead(502).end(JSON.stringify({error: "Could not read or save plugin update status. Reload the canvas to retry."}));
+            }
+            return;
+        }
         if (route === "settings/cache/clear" && req.method === "POST") {
             res.setHeader("Content-Type", "application/json");
             if (req.headers.origin !== `http://${req.headers.host}`) {
