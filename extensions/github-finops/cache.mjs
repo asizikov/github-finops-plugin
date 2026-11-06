@@ -52,10 +52,12 @@ export class SnapshotStore {
                     access_context TEXT PRIMARY KEY, retry_at TEXT NOT NULL
                 );
             `);
-            const columns = this.db.prepare("PRAGMA table_info(snapshots)").all().map(row => row.name);
-            for (const column of ["namespace", "resource"]) {
-                if (!columns.includes(column)) this.db.exec(`ALTER TABLE snapshots ADD COLUMN ${column} TEXT`);
-            }
+            this.transaction(() => {
+                const columns = this.db.prepare("PRAGMA table_info(snapshots)").all().map(row => row.name);
+                for (const column of ["namespace", "resource"]) {
+                    if (!columns.includes(column)) this.db.exec(`ALTER TABLE snapshots ADD COLUMN ${column} TEXT`);
+                }
+            });
             this.db.exec(relationshipSchema);
         } catch (error) {
             this.db?.close();
