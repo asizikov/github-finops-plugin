@@ -1,0 +1,13 @@
+{
+  "name": "github-finops",
+  "owner": {
+    "name": "asizikov"
+  },
+  "plugins": [
+    {
+      "name": "github-finops-plugin",
+      "description": "Read-only enterprise AI Credits spending and budget canvas.",
+      "source": "./"
+    }
+  ]
+}
