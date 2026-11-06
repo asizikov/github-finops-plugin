@@ -8,8 +8,10 @@ import { ghRead, localAccessContext, GitHubReadError } from "./github.mjs";
 import { loadCostCenters, validateCenterId } from "./cost-centers.mjs";
 import { loadBudgets, validateBudgetId } from "./budget-list.mjs";
 import { relationshipSchema, indexRelationships, readRelationships } from "./relationships.mjs";
+import {loadUser} from "./users.mjs";
+import {normalizeUsername} from "./ui/user-format.mjs";
 
-const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail"];
+const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail", "user"];
 
 class LocalCacheError extends Error {
     constructor(cause) {
@@ -154,13 +156,14 @@ export class OverviewCache {
         if (resource !== "overview" && !configurationResources.includes(resource)) throw new Error("Invalid cache resource.");
         if (resource === "cost-center-detail") validateCenterId(id);
         if (resource === "budget-detail") validateBudgetId(id);
+        if (resource === "user") id = normalizeUsername(id);
         const config = validateInput(input);
         const context = digest([config.host.toLowerCase(), await this.identity(config.host)]);
         const namespace = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context]);
         const now = this.clock();
         const scope = resource === "overview"
             ? [now.getUTCFullYear(), now.getUTCMonth() + 1] : [resource, id ?? null];
-        if (resource === "budgets" || resource === "budget-detail") {
+        if (resource === "budgets" || resource === "budget-detail" || resource === "user") {
             scope.push(now.getUTCFullYear(), now.getUTCMonth() + 1);
         }
         const key = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context, ...scope]);
@@ -202,6 +205,7 @@ export class OverviewCache {
         let live;
         try {
             live = resource === "overview" ? await this.load(config, read, now)
+                : resource === "user" ? await loadUser(config, read, id, now)
                 : resource === "budgets" || resource === "budget-detail"
                     ? await loadBudgets(config, read, resource === "budget-detail" ? id : undefined)
                     : await loadCostCenters(config, read, resource === "cost-center-detail" ? id : undefined);

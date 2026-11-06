@@ -7,6 +7,7 @@ import '@primer/primitives/dist/css/functional/themes/dark.css';
 import './style.css';
 import CostCenters from './CostCenters';
 import Budgets from './Budgets';
+import Users, {type UserLookup} from './Users';
 import type {ListState} from './pagination.mjs';
 
 type Budget = {
@@ -140,6 +141,7 @@ function App() {
   const [history, setHistory] = useState<Route[]>([{page:'Overview'}]);
   const [centerList, setCenterList] = useState<ListState>({query:'',page:1});
   const [budgetList, setBudgetList] = useState<ListState>({query:'',page:1});
+  const [userLookup,setUserLookup] = useState<UserLookup>({query:'',login:null});
   const route = history[history.length - 1];
   const page = route.page;
   const open = (route: Route) => setHistory(history => [...history,route]);
@@ -162,7 +164,7 @@ function App() {
       {page === 'Overview' ? <OverviewPage /> : page === 'Cost Centers' ?
         <CostCenters selected={route.id} list={centerList} setList={setCenterList} select={id => open({page:'Cost Centers',id})} back={back} backLabel={backLabel} openBudget={id => open({page:'Budgets',...(id ? {id} : {})})} /> :
         page === 'Budgets' ? <Budgets selected={route.id} list={budgetList} setList={setBudgetList} select={id => open({page:'Budgets',id})} back={back} backLabel={backLabel} canGoBack={history.length > 1} openCenter={id => open({page:'Cost Centers',id})} /> :
-        <main><div className="overview-heading"><div><div className="eyebrow">CONFIGURATION</div><h2>{page}</h2></div></div></main>}
+        <Users lookup={userLookup} setLookup={setUserLookup} openCenter={id => open({page:'Cost Centers',id})} openBudget={id => open({page:'Budgets',id})} />}
     </div>
   </BaseStyles></ThemeProvider>;
 }

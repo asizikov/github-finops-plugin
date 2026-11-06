@@ -5,10 +5,11 @@ import { createHash } from "node:crypto";
 const exec = promisify(execFile);
 
 export class GitHubReadError extends Error {
-    constructor(message, retryAt = null) {
+    constructor(message, retryAt = null, status = null) {
         super(message);
         this.retryAt = retryAt;
         this.publicMessage = message;
+        this.status = status;
     }
 }
 
@@ -53,13 +54,16 @@ export async function ghRead(path, host, onLimit) {
         ], { timeout: 30000, maxBuffer: 8 * 1024 * 1024 }));
     } catch (error) {
         let retryAt = null;
+        let status = null;
         if (typeof error.stdout === "string" && error.stdout.startsWith("HTTP/")) {
-            retryAt = rateLimitDeadline(parseResponse(error.stdout));
+            const response = parseResponse(error.stdout);
+            retryAt = rateLimitDeadline(response);
+            status = response.status;
         }
         throw new GitHubReadError(retryAt
             ? "GitHub requests are rate-limited. Cached data is retained until refresh is available."
             : "Could not read GitHub billing data. Check gh authentication, billing access, hostname, and connectivity.",
-        retryAt);
+        retryAt, status);
     }
     const response = parseResponse(stdout);
     const data = JSON.parse(response.body);

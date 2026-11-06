@@ -67,7 +67,7 @@ for an unchanged credential. Refresh is required to recheck GitHub access.
 
 ## Cost centers
 
-The sidebar includes Overview, Cost Centers, Budgets, and an empty Users page.
+The sidebar includes Overview, Cost Centers, Budgets, and Users.
 All page headers stay at the top, including empty and loading states.
 Cost center search covers the full loaded list by name, ID, and state;
 visible list pages contain at most 25 rows. Selecting a name or row opens
@@ -137,3 +137,30 @@ do not establish that no related budgets exist.
 Cost center details link to related budgets; budget lists and details link back
 to resolved cost centers. In-app back navigation preserves the originating
 detail view and each list's search and page.
+
+## User lookup
+
+Users accepts a single GitHub username (whitespace and one leading `@` are
+removed; login matching is case-insensitive). Search explicitly resolves the
+account, reads user resource memberships and all pages of user-filtered budgets,
+and saves the result. It does not fetch a bulk roster or the complete budget
+list. Warm searches use SQLite without GitHub requests. Refresh is explicit;
+failed refreshes retain the last successful lookup. Keys include the normalized
+username, host, enterprise, credential context, and UTC billing month.
+
+Membership links use API-supplied cost center UUIDs. The user-filtered budget
+response must echo the requested user before its `effective_budget` is trusted.
+Only a matching AI Credits per-user control is marked effective; lower-priority
+defaults returned for that user are labeled overridden. Missing or inconsistent
+effective configuration is unknown, not zero or unlimited. Detail endpoints can
+enrich missing effective configuration but their unfiltered consumption is never
+substituted for user-specific consumption.
+
+Aggregate spending guardrails and additional defaults come from already saved
+configuration, without automatic list fetches. Exact-unique-name relationship
+provenance remains visible. Cost center membership does not prove which
+organization pays for usage, so membership-associated cost center and enterprise
+guardrails are candidates with unknown applicability. Unresolved organization,
+repository, policy, and pool context stays explicit; unrelated enterprise
+budgets are not presented as controls on this user. Consumption and headroom
+are budget-tracked USD, not net billed spending or an authorization decision.
