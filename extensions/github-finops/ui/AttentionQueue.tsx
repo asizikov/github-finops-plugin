@@ -15,16 +15,16 @@ export default function AttentionQueue({openBudget}: {openBudget: (id: string) =
   const result = paginateAttention(queue.rows, scope, product, page);
   const scopes = [...new Set(budgets.map(budget => budget.scope))].sort();
   const products = [...new Set(budgets.map(budget => budget.product))].sort();
-  return <section aria-labelledby="attention-heading">
+  return <section className="attention-section" aria-labelledby="attention-heading">
     <div className="overview-heading">
-      <div><h2 id="attention-heading">Attention queue</h2><p className="muted">Read-only signals from saved budget records.</p></div>
+      <div><h3 id="attention-heading">Attention queue</h3><p className="muted">Signals from saved budget records.</p></div>
       <Button disabled={state.loading} onClick={() => void state.refresh(false)}>{state.loading ? 'Loading queue...' : 'Reload queue'}</Button>
     </div>
     <SnapshotStatus state={state} />
-    <p className="caption">Reload reads local cache only, never GitHub. No budget details or user rosters are fetched. Refresh the Budgets list separately to update coverage.</p>
+    <p className="section-intro">Reload reads local cache only. Refresh Budgets separately to update coverage.</p>
     {!state.loading && !state.snapshot && !state.error && <p className="empty-results">No saved budget list. Open Budgets and load a snapshot first.</p>}
     {state.snapshot && <>
-      <div className="cache-status">
+      <div className="filter-bar">
         <FormControl><FormControl.Label>Scope</FormControl.Label>
           <Select value={scope} onChange={event => {setScope(event.target.value); setPage(1);}}>
             <Select.Option value="">All scopes</Select.Option>
@@ -38,9 +38,8 @@ export default function AttentionQueue({openBudget}: {openBudget: (id: string) =
           </Select>
         </FormControl>
       </div>
-      <p className="caption">The snapshot time above describes the budget list. Newer cached detail/index records replace older records by budget ID; saved relationship-only budgets are included. Each signal shows its record time; saved records may be stale and coverage may be incomplete.</p>
-      <p className="caption">{queue.coverage.comparable} of {queue.coverage.total} cached budgets have known limits, consumption, and supported units; {queue.coverage.unavailable} cannot be evaluated for usage. Expiration can flag independently. Missing consumption is not a risk signal.</p>
-      <div className="table-scroll center-table" aria-busy={state.loading}><table>
+      <p className="field-note">{queue.coverage.comparable} of {queue.coverage.total} cached budgets can be evaluated for usage; {queue.coverage.unavailable} cannot. Saved records may be stale and coverage incomplete.</p>
+      <div className="table-scroll center-table wide-table" tabIndex={0} role="region" aria-label="Budget attention signals" aria-busy={state.loading}><table>
         <caption className="sr-only">Budget attention signals. Select a product to open its budget details.</caption>
         <thead><tr><th scope="col">Product / SKU</th><th scope="col">Scope / entity</th><th scope="col">Severity / reason</th><th scope="col">Consumption / limit</th></tr></thead>
         <tbody>{result.items.map(({budget, reasons, percent, severity}) => <tr key={budget.id}>
@@ -65,7 +64,12 @@ export default function AttentionQueue({openBudget}: {openBudget: (id: string) =
           <span>Page {result.page} of {result.pages}</span>
           <Button disabled={result.page === result.pages} onClick={() => setPage(result.page + 1)}>Next</Button></div>
       </div>
-      <p className="caption">Near limit means at least 90%, below 100%. Expiring individual user overrides are within 7 UTC calendar days, including today; expired timestamps are excluded and date-only values use their UTC date. Only returned expirations are evaluated. Usage is budget-tracked, not invoiced; budgets may overlap. No forecasts or inferred user usage.</p>
+      <details className="section-details"><summary>How attention signals are evaluated</summary>
+        <p>Usage signals require known limits, consumption, and supported units. Missing consumption is not a risk signal; expiration can flag independently. Near limit means at least 90%, below 100%.</p>
+        <p>Expiring individual user overrides are within 7 UTC calendar days, including today; expired timestamps are excluded and date-only values use their UTC date. Only returned expirations are evaluated.</p>
+        <p>The snapshot time describes the budget list. Newer cached detail/index records replace older records by budget ID; saved relationship-only budgets are included. Each signal shows its record time.</p>
+        <p>Reload never queries GitHub or fetches budget details or user rosters. Usage is budget-tracked, not invoiced; budgets may overlap. No forecasts or inferred user usage.</p>
+      </details>
     </>}
   </section>;
 }

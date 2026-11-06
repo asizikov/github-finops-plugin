@@ -77,13 +77,13 @@ export default function CacheControls({enterprise,host,cleared}: {enterprise: st
   return <section className="budget-card settings-section" aria-labelledby="cache-title" aria-busy={busy !== null}>
     <div className="spending-heading"><h3 id="cache-title">Local cache</h3>
       <Button size="small" disabled={busy !== null || confirmation !== null} onClick={() => void act('status')}>Reload status</Button></div>
-    <p className="caption">Only {enterprise} on {host}, using the current credential context. Snapshot groups include saved billing months. Opening this panel does not query GitHub.</p>
+    <p className="section-intro">{enterprise} on {host}, for the current credential context. Opening this panel does not query GitHub.</p>
     {error && <Flash variant="danger">{error}</Flash>}
     {message && <p role="status">{message}</p>}
     {data && <>
-      <p><Label>{busy === 'refresh' || data.refreshing ? 'Refresh in progress' : 'No refresh in progress'}</Label></p>
+      <p className="field-note">{busy === 'refresh' || data.refreshing ? <Label>Refresh in progress</Label> : 'No refresh in progress'}</p>
       {!data.exists ? <p>No local database exists yet.</p> : !data.snapshots.length ? <p>No recognized snapshots in this context.</p> :
-        <div className="table-scroll"><table><caption className="sr-only">Current-context cache snapshots</caption>
+        <div className="table-scroll center-table wide-table" tabIndex={0} role="region" aria-label="Cache snapshots"><table><caption className="sr-only">Current-context cache snapshots</caption>
           <thead><tr><th scope="col">Snapshot group</th><th scope="col">Saved</th><th scope="col">Newest successful read</th><th scope="col">Oldest read</th><th scope="col">Status</th></tr></thead>
           <tbody>{data.snapshots.map(row => <tr key={row.resource}><td>{names[row.resource] ?? row.resource}</td><td>{row.count}</td>
             <td>{new Date(row.newestAt).toLocaleString()}<p className="caption">{age(row.newestAt,now)}</p></td>
@@ -94,13 +94,15 @@ export default function CacheControls({enterprise,host,cleared}: {enterprise: st
         <Button disabled={busy !== null || blocked || data.refreshing || confirmation !== null} onClick={() => void act('refresh')}>{busy === 'refresh' ? 'Refreshing overview...' : 'Refresh overview'}</Button>
         <Button ref={clearButton} variant="danger" disabled={busy !== null || !data.contextToken || confirmation !== null} onClick={() => setConfirmation(data.contextToken)}>Clear this cache</Button>
       </div>
-      {confirmation && <div role="group" aria-labelledby="clear-cache-title">
+      {confirmation && <div className="cache-confirmation" role="group" aria-labelledby="clear-cache-title">
         <h4 id="clear-cache-title">Clear cached data for {enterprise} on {host}?</h4>
         <p>Removes snapshots and derived links for this credential context. Other enterprises/accounts, credentials, the configured target and rate-limit cooldown are retained. The next view returns to Connect your enterprise.</p>
         <div className="row"><Button ref={cancel} disabled={busy !== null} onClick={() => setConfirmation(null)}>Cancel</Button>
           <Button variant="danger" disabled={busy !== null} onClick={() => void act('clear')}>{busy === 'clear' ? 'Clearing...' : 'Confirm clear current context'}</Button></div>
       </div>}
-      <p className="caption">Inventory covers recognized snapshots. Older unclassified rows cannot be selectively deleted; clearing invalidates them for this context without touching another account.</p>
+      <details className="section-details"><summary>What this cache contains</summary>
+        <p>Snapshot groups include saved billing months. Inventory covers recognized snapshots. Older unclassified rows cannot be selectively deleted; clearing invalidates them for this context without touching another account.</p>
+      </details>
     </>}
   </section>;
 }
