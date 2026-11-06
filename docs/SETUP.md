@@ -69,6 +69,16 @@ deadlines are persisted per host/access context; a rate-limit response without a
 deadline pauses requests for 60 seconds. There are no automatic retries.
 SQLite errors are surfaced, not bypassed with uncached reads.
 
+Settings > Local cache lists recognized snapshot groups, their successful read
+times, refresh errors, current refresh activity and any shared GitHub cooldown.
+Reload status is local; Refresh overview deliberately refreshes only the overview.
+Clear this cache requires confirmation for the current host, enterprise and
+credential context. It transactionally removes recognized snapshots and derived
+links, retains other contexts, credentials, the configured target and cooldown,
+and returns to onboarding. In-flight requests cannot restore cleared snapshots.
+Older unclassified rows cannot be selectively deleted; a durable generation
+change invalidates them for this context without deleting another account's data.
+
 Offline cache reads cannot check remotely revoked permissions or changed access
 for an unchanged credential. Refresh is required to recheck GitHub access.
 

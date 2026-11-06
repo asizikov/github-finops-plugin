@@ -35,6 +35,28 @@ function reader(scopes = ["repo","read:enterprise"]) {
 }
 const diagnosticReader = source => (path,host,inspect,identity) => source.read(path,host,undefined,inspect,identity);
 
+test("cache routes require explicit same-origin scoped confirmation and never clear on status reads", async t => {
+    t.mock.method(console,"error",() => {});
+    const actions = [];
+    const controlCache = async (target,options = {}) => {
+        assert.deepEqual(target,config);
+        actions.push(options);
+        if (options.action === "clear" && options.contextToken !== "fixture-context") throw new Error("Context changed; confirm again.");
+        return options.action === "clear" ? {cleared:true} : {contextToken:"fixture-context",snapshots:[]};
+    };
+    const {server,url} = await startServer(config,async () => null,{controlCache});
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const origin = new URL(url).origin;
+    assert.equal((await fetch(`${url}settings/cache/clear`)).status,404);
+    assert.equal((await fetch(`${url}settings/cache`)).status,200);
+    assert.equal(actions.length,1);
+    assert.equal((await fetch(`${url}settings/cache/clear`,{method:"POST",body:'{"contextToken":"fixture-context"}'})).status,403);
+    assert.equal(actions.length,1);
+    const post = token => fetch(`${url}settings/cache/clear`,{method:"POST",headers:{origin},body:JSON.stringify({contextToken:token})});
+    assert.equal((await post("old-context")).status,409);
+    assert.deepEqual(await (await post("fixture-context")).json(),{cleared:true});
+});
+
 test("runtime version comes from the manifest and reports only the checkout's actual revision/status", async t => {
     const directory = temporary(t);
     writeFileSync(join(directory,"package.json"),JSON.stringify({version:"1.2.3-beta.1"}));

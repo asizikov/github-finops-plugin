@@ -15,6 +15,14 @@ import {loadConnection} from "./settings.mjs";
 
 const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail", "user", "team-cost-centers", "connection"];
 
+class CacheClearedError extends Error {
+    constructor() {
+        super("This cache was cleared while a request was in progress. Reload before requesting data again.");
+        this.publicMessage = this.message;
+        this.code = "cache_cleared";
+    }
+}
+
 class LocalCacheError extends Error {
     constructor(cause) {
         super("Could not access the local SQLite cache. Check cache permissions and database integrity.", { cause });
@@ -35,12 +43,19 @@ export class SnapshotStore {
                 PRAGMA journal_mode = WAL;
                 CREATE TABLE IF NOT EXISTS snapshots (
                     cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL,
-                    last_error TEXT
+                    last_error TEXT, namespace TEXT, resource TEXT
+                );
+                CREATE TABLE IF NOT EXISTS cache_contexts (
+                    namespace TEXT PRIMARY KEY, generation INTEGER NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS rate_limits (
                     access_context TEXT PRIMARY KEY, retry_at TEXT NOT NULL
                 );
             `);
+            const columns = this.db.prepare("PRAGMA table_info(snapshots)").all().map(row => row.name);
+            for (const column of ["namespace", "resource"]) {
+                if (!columns.includes(column)) this.db.exec(`ALTER TABLE snapshots ADD COLUMN ${column} TEXT`);
+            }
             this.db.exec(relationshipSchema);
         } catch (error) {
             this.db?.close();
@@ -49,12 +64,24 @@ export class SnapshotStore {
     }
 
     operation(fn) {
-        try { return fn(); } catch (error) { throw new LocalCacheError(error); }
+        try { return fn(); } catch (error) {
+            if (error instanceof CacheClearedError) throw error;
+            throw new LocalCacheError(error);
+        }
     }
 
-    get(key) {
+    generation(namespace) {
+        return this.operation(() => this.db.prepare("SELECT generation FROM cache_contexts WHERE namespace = ?").get(namespace)?.generation ?? 0);
+    }
+
+    assertCurrent(namespace, generation) {
+        if (namespace && this.generation(namespace) !== generation) throw new CacheClearedError();
+    }
+
+    get(key, namespace, resource, generation) {
         return this.operation(() => {
-            const row = this.db.prepare("SELECT payload, last_error FROM snapshots WHERE cache_key = ?").get(key);
+            this.assertCurrent(namespace, generation);
+            const row = this.db.prepare("SELECT payload, last_error, namespace, resource FROM snapshots WHERE cache_key = ?").get(key);
             if (!row) return null;
             const snapshot = JSON.parse(row.payload);
             if (snapshot.kind) {
@@ -66,6 +93,9 @@ export class SnapshotStore {
                 (snapshot.spendingAt !== null && !Number.isFinite(Date.parse(snapshot.spendingAt))) ||
                 !["available", "unavailable", "error"].includes(snapshot.spending?.status)) {
                 throw new Error("Invalid cached snapshot.");
+            }
+            if (namespace && (row.namespace !== namespace || row.resource !== resource)) {
+                this.db.prepare("UPDATE snapshots SET namespace = ?, resource = ? WHERE cache_key = ?").run(namespace, resource, key);
             }
             return { ...snapshot, lastError: row.last_error };
         });
@@ -83,24 +113,64 @@ export class SnapshotStore {
         }
     }
 
-    put(key, snapshot, error = null, namespace) {
+    put(key, snapshot, error = null, namespace, generation = namespace ? this.generation(namespace) : undefined) {
         this.operation(() => this.transaction(() => {
+            this.assertCurrent(namespace, generation);
             this.db.prepare(`
-                INSERT INTO snapshots (cache_key, payload, last_error) VALUES (?, ?, ?)
-                ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, last_error = excluded.last_error
-            `).run(key, JSON.stringify(snapshot), error);
+                INSERT INTO snapshots (cache_key, payload, last_error, namespace, resource) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, last_error = excluded.last_error,
+                    namespace = excluded.namespace, resource = excluded.resource
+            `).run(key, JSON.stringify(snapshot), error, namespace ?? null, snapshot.kind ?? "overview");
             if (namespace) indexRelationships(this.db, namespace, key, snapshot);
         }));
     }
 
-    index(namespace, key, snapshot) {
-        this.operation(() => this.transaction(() => indexRelationships(this.db, namespace, key, snapshot)));
+    index(namespace, key, snapshot, generation = this.generation(namespace)) {
+        this.operation(() => this.transaction(() => {
+            this.assertCurrent(namespace, generation);
+            indexRelationships(this.db, namespace, key, snapshot);
+        }));
     }
 
     relationships(namespace) { return this.operation(() => readRelationships(this.db, namespace)); }
 
-    fail(key, message) {
-        this.operation(() => this.db.prepare("UPDATE snapshots SET last_error = ? WHERE cache_key = ?").run(message, key));
+    fail(key, message, namespace, generation) {
+        this.operation(() => this.transaction(() => {
+            this.assertCurrent(namespace, generation);
+            this.db.prepare("UPDATE snapshots SET last_error = ? WHERE cache_key = ?").run(message, key);
+        }));
+    }
+
+    inventory(namespace) {
+        return this.operation(() => {
+            const groups = new Map();
+            for (const row of this.db.prepare("SELECT resource, payload, last_error FROM snapshots WHERE namespace = ?").all(namespace)) {
+                const snapshot = JSON.parse(row.payload);
+                const dates = [[row.resource, snapshot.fetchedAt ?? snapshot.budgetsAt]];
+                if (!snapshot.kind && snapshot.spendingAt) dates.push(["overview-spending", snapshot.spendingAt]);
+                for (const [resource, date] of dates) {
+                    const group = groups.get(resource) ?? {resource, count: 0, oldestAt: date, newestAt: date, errors: 0};
+                    group.count++;
+                    if (date < group.oldestAt) group.oldestAt = date;
+                    if (date > group.newestAt) group.newestAt = date;
+                    if (row.last_error) group.errors++;
+                    groups.set(resource, group);
+                }
+            }
+            return [...groups.values()].sort((a, b) => a.resource.localeCompare(b.resource));
+        });
+    }
+
+    clear(namespace, generation) {
+        this.operation(() => this.transaction(() => {
+            this.assertCurrent(namespace, generation);
+            this.db.prepare(`INSERT INTO cache_contexts VALUES (?, ?) ON CONFLICT(namespace)
+                DO UPDATE SET generation = excluded.generation`).run(namespace, generation + 1);
+            this.db.prepare("DELETE FROM snapshots WHERE namespace = ?").run(namespace);
+            for (const table of ["relationship_sources", "relationship_centers", "relationship_budgets", "budget_cost_centers"]) {
+                this.db.prepare(`DELETE FROM ${table} WHERE namespace = ?`).run(namespace);
+            }
+        }));
     }
 
     deadline(context, now) {
@@ -135,6 +205,32 @@ export class OverviewCache {
         this.pending = new Map();
     }
 
+    async scope(input) {
+        const config = validateInput(input);
+        const context = digest([config.host.toLowerCase(), await this.identity(config.host)]);
+        const namespace = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context]);
+        const generation = this.store.generation(namespace);
+        return {config, context, namespace, generation, contextToken: digest([namespace, generation])};
+    }
+
+    async status(input) {
+        const {context, namespace, generation, contextToken} = await this.scope(input);
+        return {exists: true, contextToken, snapshots: this.store.inventory(namespace),
+            retryAt: this.store.deadline(context, this.clock()),
+            refreshing: [...this.pending.keys()].some(key => key.startsWith(`${namespace}:${generation}:`))};
+    }
+
+    async clear(input, contextToken) {
+        const scope = await this.scope(input);
+        if (!contextToken || contextToken !== scope.contextToken) {
+            const error = new Error("The enterprise/account cache context changed. Reload cache status and confirm again.");
+            error.publicMessage = error.message;
+            throw error;
+        }
+        this.store.clear(scope.namespace, scope.generation);
+        return {cleared: true};
+    }
+
     present(snapshot, source, retryAt = null, error = snapshot.lastError ?? null, namespace) {
         if (snapshot.kind) {
             return { data: snapshot.data, relationships: this.store.relationships(namespace), cache: {
@@ -160,24 +256,26 @@ export class OverviewCache {
         if (resource === "budget-detail") validateBudgetId(id);
         if (resource === "user") id = normalizeUsername(id);
         if (resource === "team-cost-centers") validateTeamSlug(id);
-        const config = validateInput(input);
-        const context = digest([config.host.toLowerCase(), await this.identity(config.host)]);
-        const namespace = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context]);
+        const {config, context, namespace, generation} = await this.scope(input);
+        const cacheKey = scope => {
+            const original = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context, ...scope]);
+            return generation === 0 ? original : digest([original, generation]);
+        };
         const now = this.clock();
         const scope = resource === "overview"
             ? [now.getUTCFullYear(), now.getUTCMonth() + 1] : [resource, id ?? null];
         if (resource === "budgets" || resource === "budget-detail" || resource === "user") {
             scope.push(now.getUTCFullYear(), now.getUTCMonth() + 1);
         }
-        const key = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context, ...scope]);
+        const key = cacheKey(scope);
         if (resource !== "overview") {
             for (const listScope of [["cost-centers", null], ["budgets", null, now.getUTCFullYear(), now.getUTCMonth() + 1]]) {
-                const listKey = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context, ...listScope]);
-                this.store.index(namespace, listKey, this.store.get(listKey));
+                const listKey = cacheKey(listScope);
+                this.store.index(namespace, listKey, this.store.get(listKey, namespace, listScope[0], generation), generation);
             }
         }
-        const cached = this.store.get(key);
-        if (resource !== "overview" && cached) this.store.index(namespace, key, cached);
+        const cached = this.store.get(key, namespace, resource, generation);
+        if (resource !== "overview" && cached) this.store.index(namespace, key, cached, generation);
         const retryAt = this.store.deadline(context, now);
         if (retryAt) {
             const message = "GitHub requests are paused until the rate-limit cooldown ends. Cached data has not been refreshed.";
@@ -186,21 +284,25 @@ export class OverviewCache {
         }
         if (cacheOnly && !cached) return null;
         if (!refresh && cached) return this.present(cached, "cached", null, undefined, namespace);
-        let pending = this.pending.get(key);
+        const pendingKey = `${namespace}:${generation}:${key}`;
+        let pending = this.pending.get(pendingKey);
         if (!pending) {
-            pending = this.refresh(key, config, context, cached, now, resource, id, namespace);
-            this.pending.set(key, pending);
-            pending.then(() => this.pending.delete(key), () => this.pending.delete(key));
+            pending = this.refresh(key, config, context, cached, now, resource, id, namespace, generation);
+            this.pending.set(pendingKey, pending);
+            pending.then(() => this.pending.delete(pendingKey), () => this.pending.delete(pendingKey));
         }
         return pending;
     }
 
-    async refresh(key, config, context, cached, now, resource, id, namespace) {
+    async refresh(key, config, context, cached, now, resource, id, namespace, generation) {
         const read = async (path, host, inspect, identity) => {
+            this.store.assertCurrent(namespace, generation);
             const blocked = this.store.deadline(context, this.clock());
             if (blocked) throw new GitHubReadError("GitHub rate-limit cooldown is active.", blocked);
             try {
-                return await this.read(path, host, retryAt => this.store.limit(context, retryAt), inspect, identity);
+                const result = await this.read(path, host, retryAt => this.store.limit(context, retryAt), inspect, identity);
+                this.store.assertCurrent(namespace, generation);
+                return result;
             } catch (error) {
                 if (error.retryAt) this.store.limit(context, error.retryAt);
                 throw error;
@@ -216,15 +318,17 @@ export class OverviewCache {
                     ? await loadBudgets(config, read, resource === "budget-detail" ? id : undefined)
                     : await loadCostCenters(config, read, resource === "cost-center-detail" ? id : undefined);
         } catch (error) {
-            if (error instanceof LocalCacheError) throw error;
+            this.store.assertCurrent(namespace, generation);
+            if (error instanceof LocalCacheError || error instanceof CacheClearedError) throw error;
             console.error("Live data refresh failed:", error);
             if (error.retryAt) this.store.limit(context, error.retryAt);
             const retained = this.store.get(key) ?? cached;
             if (!retained) throw error;
             const message = error.publicMessage ?? "Live refresh failed. The last successful snapshot is shown.";
-            this.store.fail(key, message);
+            this.store.fail(key, message, namespace, generation);
             return this.present(retained, "cached", this.store.deadline(context, this.clock()), message, namespace);
         }
+        this.store.assertCurrent(namespace, generation);
         if (resource !== "overview") {
             if (resource === "connection") {
                 const retained = (this.store.get(key) ?? cached)?.data;
@@ -248,7 +352,7 @@ export class OverviewCache {
             const snapshot = { kind: resource, data: live, fetchedAt: new Date().toISOString(),
                 ...(["cost-centers", "budgets"].includes(resource) ? {complete: true} : {}),
             };
-            this.store.put(key, snapshot, null, namespace);
+            this.store.put(key, snapshot, null, namespace, generation);
             return this.present(snapshot, "live", this.store.deadline(context, this.clock()), undefined, namespace);
         }
         const spendingFailed = live.spending.status === "error";
@@ -260,7 +364,7 @@ export class OverviewCache {
         };
         const error = spendingFailed ? live.spending.message : null;
         if (live.spending.retryAt) this.store.limit(context, live.spending.retryAt);
-        this.store.put(key, snapshot, error);
+        this.store.put(key, snapshot, error, namespace, generation);
         return this.present(snapshot, "live",
             this.store.deadline(context, this.clock()), error);
     }
@@ -280,4 +384,15 @@ export function cachedOverview(input, options) {
         cache = new OverviewCache(new SnapshotStore(databasePath()));
     }
     return cache.get(input, options);
+}
+
+export async function cacheControls(input, {action = "status", contextToken} = {}) {
+    if (!cache && !existsSync(databasePath())) {
+        if (action !== "status") throw new Error("No database exists. Reload cache status.");
+        return {exists: false, contextToken: null, snapshots: [], refreshing: false, retryAt: null};
+    }
+    if (!cache) cache = new OverviewCache(new SnapshotStore(databasePath()));
+    if (action === "status") return cache.status(input);
+    if (action === "clear") return cache.clear(input, contextToken);
+    throw new Error("Invalid cache action.");
 }

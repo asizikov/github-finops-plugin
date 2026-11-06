@@ -179,7 +179,10 @@ function App() {
       <div className="page-scroll" tabIndex={0} role="region" aria-label={startup?.hasOverview ? `${page} page content` : 'Connect your enterprise'} key={`${startup?.hasOverview}-${page}-${route.id ?? ''}`}>
       {!startup ? <main><h2>GitHub FinOps</h2><p role="status">Reading local startup information...</p></main> : !startup.hasOverview ?
         <Onboarding startup={startup} connected={() => setStartup({...startup,hasOverview:true})} /> :
-      page === 'Overview' ? <OverviewPage /> : page === 'Settings' ? <Settings /> : page === 'Cost Centers' ?
+      page === 'Overview' ? <OverviewPage /> : page === 'Settings' ? <Settings cleared={() => {
+        setUserLookup({query:'',login:null});setCenterList({query:'',page:1});setBudgetList({query:'',page:1});
+        setHistory([{page:'Overview'}]);setStartup({...startup,hasOverview:false,error:null});
+      }} /> : page === 'Cost Centers' ?
         <CostCenters selected={route.id} list={centerList} setList={setCenterList} select={id => open({page:'Cost Centers',id})} back={back} backLabel={backLabel} openBudget={id => open({page:'Budgets',...(id ? {id} : {})})} /> :
         page === 'Budgets' ? <Budgets selected={route.id} list={budgetList} setList={setBudgetList} select={id => open({page:'Budgets',id})} back={back} backLabel={backLabel} canGoBack={history.length > 1} openCenter={id => open({page:'Cost Centers',id})} /> :
         <Users lookup={userLookup} setLookup={setUserLookup} openCenter={id => open({page:'Cost Centers',id})} openBudget={id => open({page:'Budgets',id})} />}

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { SnapshotStore, OverviewCache } from "./cache.mjs";
 import { GitHubReadError } from "./github.mjs";
+import {createHash} from "node:crypto";
 
 const input = { enterprise: "example-enterprise" };
 
@@ -227,6 +228,112 @@ test("budget list/detail snapshots persist, isolate access and retain data throu
     await assert.rejects(cache.get(input,{resource:"budgets"}),/Rate limited/);
     state.account = "account-one";
     await assert.rejects(cache.get({enterprise:"another-enterprise"},{resource:"budgets"}),/No snapshot/);
+});
+
+test("cache status is local and clearing isolates tenants, accounts and derived relationships", async t => {
+    const {cache,store,state,options,path} = setup(t);
+    await cache.get(input);
+    const scope = await cache.scope(input);
+    store.put("fixture-center",{kind:"cost-centers",complete:true,data:[{id:"center-one",name:"Engineering"}],fetchedAt:state.now.toISOString()},null,scope.namespace);
+    store.put("fixture-budget",{kind:"budgets",data:[{id:"budget-one",scope:"cost_center",entity:"Engineering"}],fetchedAt:state.now.toISOString()},null,scope.namespace);
+    assert.equal(store.relationships(scope.namespace).links.length,1);
+    await cache.get({enterprise:"another-enterprise"});
+    state.account = "account-two";
+    await cache.get(input);
+    const calls = state.calls;
+    state.account = "account-one";
+    const status = await cache.status(input);
+    assert.equal(status.snapshots.find(row => row.resource === "overview").count,1);
+    assert.equal(status.refreshing,false);
+    assert.equal(state.calls,calls);
+    state.account = "account-two";
+    await assert.rejects(cache.clear(input,status.contextToken),/context changed/);
+    state.account = "account-one";
+    await cache.clear(input,status.contextToken);
+    assert.deepEqual((await cache.status(input)).snapshots,[]);
+    assert.equal(store.relationships(scope.namespace).links.length,0);
+    const restartedStore = new SnapshotStore(path);
+    try {
+        const restarted = new OverviewCache(restartedStore,options);
+        assert.equal(await restarted.get(input,{cacheOnly:true}),null);
+        assert.equal((await restarted.get({enterprise:"another-enterprise"},{cacheOnly:true})).cache.source,"cached");
+        state.account = "account-two";
+        assert.equal((await restarted.get(input,{cacheOnly:true})).cache.source,"cached");
+        assert.equal(state.calls,calls);
+    } finally {restartedStore.close();}
+});
+
+test("clear fences in-flight results and errors without deduplicating new requests against old ones", async t => {
+    const {store,options} = setup(t);
+    for (const fail of [false,true]) {
+        let hold = false;
+        let release;
+        const cache = new OverviewCache(store,{...options,load:async () => {
+            if (hold) await new Promise((resolve,reject) => {release = () => fail ? reject(new Error("Old failure")) : resolve();});
+            return {budgets:[],updatedAt:options.clock().toISOString(),spending:{status:"unavailable",message:"Fixture"}};
+        }});
+        await cache.get(input);
+        hold = true;
+        const old = cache.get(input,{refresh:true});
+        const rejected = assert.rejects(old,error => error.code === "cache_cleared");
+        while (!release) await new Promise(resolve => setImmediate(resolve));
+        const status = await cache.status(input);
+        assert.equal(status.refreshing,true);
+        await cache.clear(input,status.contextToken);
+        hold = false;
+        const current = await cache.get(input);
+        assert.equal(current.cache.source,"live");
+        assert.equal((await cache.status(input)).refreshing,false);
+        release();
+        await rejected;
+        assert.equal((await cache.get(input,{cacheOnly:true})).cache.source,"cached");
+    }
+});
+
+test("legacy unclassified snapshots are invalidated across restart without deleting another context", async t => {
+    const {cache,store,state,options} = setup(t);
+    await cache.get(input);
+    const {context} = await cache.scope(input);
+    const key = createHash("sha256").update(JSON.stringify(["github.com","example-enterprise",context,"user","sample-user",2025,1])).digest("hex");
+    store.db.prepare("INSERT INTO snapshots (cache_key,payload) VALUES (?,?)").run(key,
+        JSON.stringify({kind:"user",data:{id:123},fetchedAt:state.now.toISOString()}));
+    const status = await cache.status(input);
+    await cache.clear(input,status.contextToken);
+    const restarted = new OverviewCache(store,options);
+    assert.equal(await restarted.get(input,{resource:"user",id:"sample-user",cacheOnly:true}),null);
+    assert.equal(state.calls,3);
+    assert.ok(store.db.prepare("SELECT 1 FROM snapshots WHERE cache_key = ?").get(key));
+    await assert.rejects(cache.clear(input,status.contextToken),/context changed/);
+});
+
+test("clearing preserves durable rate-limit cooldown and does not request live data", async t => {
+    t.mock.method(console,"error",() => {});
+    const {cache,state,store,options} = setup(t);
+    await cache.get(input);
+    state.failure = new GitHubReadError("Rate limited","2025-01-02T00:10:00Z");
+    await cache.get(input,{refresh:true});
+    const status = await cache.status(input);
+    assert.equal(status.snapshots[0].errors,1);
+    const calls = state.calls;
+    await cache.clear(input,status.contextToken);
+    const restarted = new OverviewCache(store,options);
+    assert.equal((await restarted.status(input)).retryAt,status.retryAt);
+    await assert.rejects(restarted.get(input,{refresh:true}),/cooldown/);
+    assert.equal(state.calls,calls);
+});
+
+test("upgrades the legacy snapshot schema without losing saved data", t => {
+    const {store,path,state} = setup(t);
+    store.db.exec("DROP TABLE snapshots; CREATE TABLE snapshots (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL, last_error TEXT)");
+    store.db.prepare("INSERT INTO snapshots VALUES (?,?,NULL)").run("legacy",
+        JSON.stringify({kind:"budgets",data:[],fetchedAt:state.now.toISOString()}));
+    const migrated = new SnapshotStore(path);
+    try {
+        assert.deepEqual(migrated.get("legacy","fixture-context","budgets",0).data,[]);
+        assert.equal(migrated.inventory("fixture-context")[0].count,1);
+        migrated.clear("fixture-context",0);
+        assert.equal(migrated.get("legacy"),null);
+    } finally {migrated.close();}
 });
 
 test("budget consumption snapshots rotate with UTC billing month", async t => {

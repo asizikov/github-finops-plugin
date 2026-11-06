@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { validateInput } from "./budgets.mjs";
-import { cachedOverview, databasePath } from "./cache.mjs";
+import { cachedOverview, databasePath, cacheControls } from "./cache.mjs";
 import {versionInfo, authSource, revealDatabase} from "./settings.mjs";
 import {readTarget, saveTarget, cliStatus, parseEnterpriseUrl, canLoadOverview} from "./onboarding.mjs";
 
@@ -30,6 +30,7 @@ export async function readSettings(config, refresh = false, {
 export async function startServer(input, load = cachedOverview, {
     version = versionInfo, reveal = revealDatabase, dbPath = databasePath,
     restoreTarget = readTarget, persistTarget = saveTarget, cli = cliStatus,
+    controlCache = cacheControls,
 } = {}) {
     let config = null;
     let startupError = null;
@@ -56,6 +57,29 @@ export async function startServer(input, load = cachedOverview, {
             return;
         }
         const route = req.url?.startsWith(prefix) ? req.url.slice(prefix.length) : null;
+        if (route === "settings/cache/clear" && req.method === "POST") {
+            res.setHeader("Content-Type", "application/json");
+            if (req.headers.origin !== `http://${req.headers.host}`) {
+                res.writeHead(403).end(JSON.stringify({error: "Clearing cache requires a same-origin confirmation."}));
+                return;
+            }
+            try {
+                if (!config) throw new Error("Connect your enterprise first.");
+                let body = "";
+                for await (const chunk of req) {
+                    body += chunk;
+                    if (Buffer.byteLength(body) > 4096) throw new Error("Cache confirmation is too large.");
+                }
+                const {contextToken} = JSON.parse(body);
+                const result = await controlCache(config, {action: "clear", contextToken});
+                checkedTarget = null;
+                res.end(JSON.stringify(result));
+            } catch (error) {
+                console.error("Cache clear failed:", error);
+                res.writeHead(409).end(JSON.stringify({error: error.publicMessage ?? error.message}));
+            }
+            return;
+        }
         if ((route === "connect/check" || route === "connect/load") && req.method === "POST") {
             res.setHeader("Content-Type", "application/json");
             if (req.headers.origin !== `http://${req.headers.host}`) {
@@ -137,6 +161,15 @@ export async function startServer(input, load = cachedOverview, {
             } catch (error) {
                 console.error("Settings read failed:", error);
                 res.writeHead(502).end(JSON.stringify({error: error.publicMessage ?? "Could not load local settings or connection checks.", retryAt: error.retryAt ?? null}));
+            }
+            return;
+        }
+        if (route === "settings/cache") {
+            res.setHeader("Content-Type", "application/json");
+            try { res.end(JSON.stringify(await controlCache(config))); }
+            catch (error) {
+                console.error("Cache status failed:", error);
+                res.writeHead(502).end(JSON.stringify({error: error.publicMessage ?? "Could not read this account's cache status."}));
             }
             return;
         }

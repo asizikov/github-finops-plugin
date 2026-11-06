@@ -1,5 +1,6 @@
 import {useEffect, useState} from 'react';
 import {Button, Flash, Label, Spinner} from '@primer/react';
+import CacheControls from './CacheControls';
 
 type Check = {key: string; state: string; status: number | null; message: string; lastAccessibleAt?: string | null};
 type Connection = {
@@ -20,7 +21,7 @@ export const states: Record<string,string> = {
   unavailable: 'Unavailable / unsupported', rate_limited: 'Rate limited', unknown: 'Unknown', not_checked: 'Not checked',
 };
 
-export default function Settings() {
+export default function Settings({cleared}: {cleared: () => void}) {
   const [data,setData] = useState<SettingsData | null>(null);
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState<string | null>(null);
@@ -69,6 +70,7 @@ export default function Settings() {
         {openError && <div className="error" role="alert"><Flash variant="danger">{openError}</Flash></div>}
         {openMessage && <p className="caption" role="status">{openMessage}</p>}
       </section>
+      <CacheControls enterprise={data.target.enterprise} host={data.target.host} cleared={cleared} />
       <section className="budget-card settings-section" aria-labelledby="connection-title">
         <div className="spending-heading"><h3 id="connection-title">Enterprise connection</h3>
           <Button disabled={loading || blocked} onClick={() => void load(true)}>{loading ? 'Checking...' : blocked ? 'Rate limited' : checked ? 'Refresh checks' : 'Check connection'}</Button></div>
