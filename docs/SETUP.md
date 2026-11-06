@@ -168,7 +168,9 @@ username, host, enterprise, credential context, and UTC billing month.
 Membership links use API-supplied cost center UUIDs. The user-filtered budget
 response must echo the requested user before its `effective_budget` is trusted.
 Only a matching AI Credits per-user control is marked effective; lower-priority
-defaults returned for that user are labeled overridden. Missing or inconsistent
+defaults returned for that user are labeled overridden. The explanation groups
+the effective limit, user-specific consumption/remaining, selection evidence and
+reported expiration without adding overridden defaults. Missing or inconsistent
 effective configuration is unknown, not zero or unlimited. Detail endpoints can
 enrich missing effective configuration but their unfiltered consumption is never
 substituted for user-specific consumption.

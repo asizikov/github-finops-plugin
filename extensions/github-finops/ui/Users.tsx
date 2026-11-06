@@ -4,18 +4,15 @@ import {useSnapshot, SnapshotStatus, RefreshButton} from './Snapshot';
 import {budgetAmount, budgetEntity, scopeLabel} from './budget-format.mjs';
 import {normalizeUsername, resolveUserBudgets, userBudgetEnforcement, type UserData} from './user-format.mjs';
 import EnterpriseTeams from './EnterpriseTeams';
+import UserBudgetExplanation from './UserBudgetExplanation';
 
 export type UserLookup = {query: string; login: string | null};
 type Navigation = {openCenter: (id: string) => void; openBudget: (id: string) => void};
-const usd = (value: number | null) => value == null ? 'Unavailable' :
-  `${new Intl.NumberFormat(undefined, {style:'currency',currency:'USD'}).format(value)} USD`;
-
 function UserResult({login, openCenter, openBudget}: {login: string} & Navigation) {
   const state = useSnapshot<UserData>(`users/${encodeURIComponent(login)}`);
   const user = state.snapshot?.data;
   const relationships = state.snapshot?.relationships;
   const impact = user ? resolveUserBudgets(user, relationships) : null;
-  const effective = impact?.effective;
   const month = user ? new Intl.DateTimeFormat(undefined, {month:'long',year:'numeric',timeZone:'UTC'})
     .format(new Date(Date.UTC(user.period.year,user.period.month - 1))) : '';
   return <section aria-label="User lookup result">
@@ -31,22 +28,7 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
       </section>
       <EnterpriseTeams data={user.enterpriseTeams} cached={state.snapshot?.cache.source === 'cached'}
         disabled={state.loading || state.blocked} refresh={() => void state.refresh(true)} openCenter={openCenter} />
-      <section className="spending-section user-effective" aria-labelledby="effective-budget-title">
-        <h3 id="effective-budget-title">Effective per-user AI Credits budget</h3>
-        {effective ? <>
-          <p><button className="row-link" type="button" onClick={() => openBudget(effective.id)}>{scopeLabel(effective.budget.scope)}</button> <Label>Selected by GitHub for this user</Label></p>
-          <div className="spending-metrics">
-            <div><span className="muted">Per-user limit</span><strong>{usd(effective.amount)}</strong></div>
-            <div><span className="muted">Budget-tracked consumption</span><strong>{usd(effective.consumed)}</strong></div>
-            <div><span className="muted">Headroom</span><strong>{usd(impact.headroom)}</strong><p className="caption">Limit minus reported consumption; not a usage authorization decision.</p></div>
-          </div>
-          <p>{userBudgetEnforcement(effective.budget)}</p>
-        </> : <Flash>{!user.filterVerified ? 'The response did not confirm the requested username; effective applicability is unverified.' :
-          user.effectiveStatus === 'not_returned' ? 'The API did not return an effective per-user budget.' :
-          user.effectiveStatus === 'none_reported' ? 'GitHub reported no effective per-user budget.' :
-          'The reported effective budget could not be verified as an AI Credits control for this user.'} No zero limit, unlimited usage, or blocked status is inferred.</Flash>}
-        <p className="caption">Policies, billing organization, included credits, and pool state can affect usage. A configured hard stop or exhausted headroom is not proof that this user is currently blocked.</p>
-      </section>
+      <UserBudgetExplanation user={user} impact={impact} openBudget={openBudget} />
       <section className="resource-section"><h3>Per-user controls and defaults</h3>
         <p className="caption">An individual override can supersede cost center and enterprise per-user defaults. Only the API-selected effective budget is marked active. Saved configurations outside the user-filtered response are candidates, not confirmed applicable controls.</p>
         {impact.controls.length ? <div className="table-scroll center-table"><table>
