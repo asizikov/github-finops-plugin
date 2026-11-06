@@ -9,6 +9,7 @@ export type UserData = {
 };
 type CenterMatch = Membership & {matchedBy: 'id' | 'exact_unique_name'};
 export function normalizeUsername(value: string): string;
+export function userBudgetEnforcement(budget: BudgetRecord): string;
 export function resolveUserBudgets(user: UserData, relationships?: RelationshipsData): {
     effective: (NonNullable<UserData['effective']> & {budget: BudgetRecord}) | null;
     controls: {budget: BudgetRecord; center: CenterMatch | null; source: 'user_filter' | 'effective_detail' | 'saved_configuration'; state: 'effective' | 'overridden' | 'unconfirmed'}[];

@@ -164,3 +164,6 @@ guardrails are candidates with unknown applicability. Unresolved organization,
 repository, policy, and pool context stays explicit; unrelated enterprise
 budgets are not presented as controls on this user. Consumption and headroom
 are budget-tracked USD, not net billed spending or an authorization decision.
+Shared spending budgets are monthly metered thresholds for the whole enterprise
+or cost center, not personal allowances. Included credits are separate, and
+alert-only budgets do not stop spending.

@@ -5,7 +5,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {execFileSync} from "node:child_process";
 import {loadUser} from "./users.mjs";
-import {normalizeUsername, resolveUserBudgets} from "./ui/user-format.mjs";
+import {normalizeUsername, resolveUserBudgets, userBudgetEnforcement} from "./ui/user-format.mjs";
 import {normalizeBudgetRecord} from "./budget-list.mjs";
 import {SnapshotStore, OverviewCache} from "./cache.mjs";
 import {GitHubReadError} from "./github.mjs";
@@ -38,6 +38,16 @@ async function data() {
     return loadUser(config,reader().read,login,new Date("2025-01-02T00:00:00Z"));
 }
 const normalized = (...args) => normalizeBudgetRecord(raw(...args));
+test("enforcement labels distinguish alerts-only budgets from disabled or unknown controls", () => {
+    const label = fields => userBudgetEnforcement(normalized("budget-one","enterprise","example-enterprise",fields));
+    assert.equal(label({prevent_further_usage:true}),"Hard stop enabled");
+    assert.equal(label({prevent_further_usage:false,budget_alerting:{will_alert:true}}),"Alerts only");
+    assert.equal(label({prevent_further_usage:false,budget_alerting:{will_alert:false}}),"No hard stop or alerts");
+    assert.equal(label({prevent_further_usage:false}),"Hard stop disabled; alerts unknown");
+    assert.equal(label({prevent_further_usage:null,budget_alerting:{will_alert:true}}),"Enforcement unknown");
+    assert.equal(label({prevent_further_usage:undefined}),"Enforcement unknown");
+});
+
 function relationships(budgets = [], extra = {}) {
     return {centers:[{id:"center-one",name:"Engineering",fetchedAt:"2025-01-01T00:00:00Z"}],budgets,links:[],
         lists:{centers:{fetchedAt:"2025-01-01T00:00:00Z",error:null},budgets:null},unresolved:[],...extra};

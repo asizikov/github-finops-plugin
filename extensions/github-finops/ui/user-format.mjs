@@ -7,6 +7,13 @@ export function normalizeUsername(value) {
     return login;
 }
 
+export function userBudgetEnforcement(budget) {
+    if (budget.preventFurtherUsage === true) return "Hard stop enabled";
+    if (budget.preventFurtherUsage !== false) return "Enforcement unknown";
+    return budget.alerts === true ? "Alerts only" : budget.alerts === false
+        ? "No hard stop or alerts" : "Hard stop disabled; alerts unknown";
+}
+
 const isAiCredits = budget => budget.type === "BundlePricing" && budget.product === "ai_credits";
 const perUserScopes = ["user", "multi_user_cost_center", "multi_user_customer"];
 const priority = scope => ({user: 3, multi_user_cost_center: 2, multi_user_customer: 1})[scope] ?? 0;
@@ -55,11 +62,11 @@ export function resolveUserBudgets(user, relationships) {
         if (budget.scope === "enterprise") {
             guardrails.push({budget, center: null, reason: budget.excludeCostCenters === true
                 ? "Excludes cost center usage; actual billing assignment is unknown."
-                : "Enterprise spending guardrail; billing organization and policies determine applicability."});
+                : "Billing organization and policies determine whether this shared budget applies."});
         } else if (budget.scope === "cost_center") {
             const center = associatedCenter(budget, user.memberships, relationships);
             if (center) guardrails.push({budget, center,
-                reason: "Membership-associated guardrail; actual billing assignment is unconfirmed."});
+                reason: "Membership matches; the billing assignment is unconfirmed."});
         } else if (["organization","repository"].includes(budget.scope) && filtered.some(item => item.id === budget.id)) {
             guardrails.push({budget, center: null, reason: "Referenced by the user query; billing organization and applicability are unconfirmed."});
         }

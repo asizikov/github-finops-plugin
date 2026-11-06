@@ -2,14 +2,12 @@ import {useState, type FormEvent, type Dispatch, type SetStateAction} from 'reac
 import {Button, Flash, Label, TextInput} from '@primer/react';
 import {useSnapshot, SnapshotStatus, RefreshButton} from './Snapshot';
 import {budgetAmount, budgetEntity, scopeLabel} from './budget-format.mjs';
-import {normalizeUsername, resolveUserBudgets, type UserData} from './user-format.mjs';
+import {normalizeUsername, resolveUserBudgets, userBudgetEnforcement, type UserData} from './user-format.mjs';
 
 export type UserLookup = {query: string; login: string | null};
 type Navigation = {openCenter: (id: string) => void; openBudget: (id: string) => void};
 const usd = (value: number | null) => value == null ? 'Unavailable' :
   `${new Intl.NumberFormat(undefined, {style:'currency',currency:'USD'}).format(value)} USD`;
-const enforcement = (value: boolean | null) => value === true ? 'Hard stop reported' :
-  value === false ? 'No hard stop reported' : 'Enforcement not returned';
 
 function UserResult({login, openCenter, openBudget}: {login: string} & Navigation) {
   const state = useSnapshot<UserData>(`users/${encodeURIComponent(login)}`);
@@ -39,7 +37,7 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
             <div><span className="muted">Budget-tracked consumption</span><strong>{usd(effective.consumed)}</strong></div>
             <div><span className="muted">Headroom</span><strong>{usd(impact.headroom)}</strong><p className="caption">Limit minus reported consumption; not a usage authorization decision.</p></div>
           </div>
-          <p>{enforcement(effective.budget.preventFurtherUsage)}</p>
+          <p>{userBudgetEnforcement(effective.budget)}</p>
         </> : <Flash>{!user.filterVerified ? 'The response did not confirm the requested username; effective applicability is unverified.' :
           user.effectiveStatus === 'not_returned' ? 'The API did not return an effective per-user budget.' :
           user.effectiveStatus === 'none_reported' ? 'GitHub reported no effective per-user budget.' :
@@ -58,22 +56,23 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
             </td>
             <td>{budgetAmount(budget.amount,budget)}</td>
             <td><Label>{status === 'effective' ? 'Effective' : status === 'overridden' ? 'Overridden default' : 'Applicability unconfirmed'}</Label><p className="caption">{source === 'user_filter' ? 'User-filtered API response' : source === 'effective_detail' ? 'Detail configuration / effective ID from user query' : 'Saved configuration; may be stale'}</p></td>
-            <td>{enforcement(budget.preventFurtherUsage)}</td>
+            <td>{userBudgetEnforcement(budget)}</td>
           </tr>)}</tbody>
         </table></div> : <p className="empty-results">No verified per-user AI Credits candidates. Missing configuration is not an unlimited allowance.</p>}
         {impact.excluded > 0 && <p className="caption">{impact.excluded} unmatched user-filtered candidate{impact.excluded === 1 ? '' : 's'} omitted; the user filter alone is not proof of applicability.</p>}
       </section>
-      <section className="resource-section"><h3>Metered spending guardrail candidates</h3>
-        <p className="caption">Separate aggregate AI Credits spending controls, not additional per-user allowances. Membership and saved relationships do not prove billing assignment; applicability remains unknown.</p>
+      <section className="resource-section"><h3>Shared metered spending budgets</h3>
+        <p className="caption">Monthly metered AI Credits spending thresholds shared across the enterprise or cost center, not this user's allowance or extra personal credit. Included credits are separate. Alerts-only budgets notify without stopping spending.</p>
         {impact.guardrails.length ? <div className="table-scroll center-table"><table>
-          <caption className="sr-only">Potential aggregate AI Credits spending guardrails, applicability unknown</caption>
-          <thead><tr><th scope="col">Budget</th><th scope="col">Aggregate limit</th><th scope="col">Applicability</th><th scope="col">Enforcement</th></tr></thead>
+          <caption className="sr-only">Shared monthly AI Credits spending budgets; applicability to this user is unconfirmed</caption>
+          <thead><tr><th scope="col">Budget</th><th scope="col">Shared spending budget</th><th scope="col">Applicability</th><th scope="col">Control</th></tr></thead>
           <tbody>{impact.guardrails.map(({budget,center,reason}) => <tr key={budget.id}>
             <td><button className="row-link" type="button" onClick={() => openBudget(budget.id)}>{scopeLabel(budget.scope)}</button>
               <p className="caption">{center ? <button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button> : budgetEntity(budget)}</p>
               {center && <span className="relationship-note">{center.matchedBy === 'id' ? 'Cost center matched by ID' : 'Exact unique name association; may be stale'}</span>}
             </td>
-            <td>{budgetAmount(budget.amount,budget)}</td><td><Label>Unknown</Label><p className="caption">{reason}</p></td><td>{enforcement(budget.preventFurtherUsage)}</td>
+            <td>{budgetAmount(budget.amount,budget)}<p className="caption">{budget.scope === 'enterprise' ? 'Enterprise-wide / month' : budget.scope === 'cost_center' ? 'Shared cost center total / month' : 'Shared scope total / month'}</p></td>
+            <td><Label>Unknown</Label><p className="caption">{reason}</p></td><td>{userBudgetEnforcement(budget)}</td>
           </tr>)}</tbody>
         </table></div> : <p className="empty-results">No matching saved guardrail candidates. This does not establish that no spending guardrails exist.</p>}
         <p className="caption">{relationships?.lists.budgets ? `Complete budget list saved ${new Date(relationships.lists.budgets.fetchedAt).toLocaleString()}; may be stale.` :
