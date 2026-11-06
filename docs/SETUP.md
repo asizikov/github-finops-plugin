@@ -221,3 +221,11 @@ Environment-token overrides are identified locally and cannot be elevated in
 place: replace them at their source or deliberately use authorized stored gh
 credentials. Settings never changes authentication. These checks cover the
 read endpoints, not all users' visibility or write capabilities.
+
+The distributable `finops-init` skill guides prerequisite checks, safe CLI
+installation/authentication remediation, and fresh capability verification.
+Ask Copilot to initialize GitHub FinOps (or invoke the plugin-qualified skill
+name shown by the client). It reuses the canvas `connection_status` action:
+`refresh:false` reads saved Settings; `refresh:true` deliberately probes GitHub.
+Installation, login, account/scope changes and environment-token replacement
+remain explicit user decisions; the skill does not install a new GitHub App.
