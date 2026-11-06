@@ -51,6 +51,9 @@ export class SnapshotStore {
                 CREATE TABLE IF NOT EXISTS rate_limits (
                     access_context TEXT PRIMARY KEY, retry_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS attribution_revisions (
+                    namespace TEXT PRIMARY KEY, revision INTEGER NOT NULL
+                );
             `);
             this.transaction(() => {
                 const columns = this.db.prepare("PRAGMA table_info(snapshots)").all().map(row => row.name);
@@ -115,9 +118,16 @@ export class SnapshotStore {
         }
     }
 
-    put(key, snapshot, error = null, namespace, generation = namespace ? this.generation(namespace) : undefined) {
+    put(key, snapshot, error = null, namespace, generation = namespace ? this.generation(namespace) : undefined, attributionRevision) {
         this.operation(() => this.transaction(() => {
             this.assertCurrent(namespace, generation);
+            if (snapshot.kind === "user" && attributionRevision !== undefined &&
+                this.attributionRevision(namespace) !== attributionRevision) {
+                const previous = this.get(key)?.data;
+                invalidateAttribution(snapshot.data.attribution, new Date().toISOString());
+                snapshot.data.attribution.lastConfirmed = previous?.id === snapshot.data.id
+                    ? confirmedReference(previous.attribution) : null;
+            }
             this.db.prepare(`
                 INSERT INTO snapshots (cache_key, payload, last_error, namespace, resource) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, last_error = excluded.last_error,
@@ -135,6 +145,27 @@ export class SnapshotStore {
     }
 
     relationships(namespace) { return this.operation(() => readRelationships(this.db, namespace)); }
+
+    attributionRevision(namespace) {
+        return this.operation(() => this.db.prepare("SELECT revision FROM attribution_revisions WHERE namespace = ?")
+            .get(namespace)?.revision ?? 0);
+    }
+
+    invalidateAttributions(namespace, generation, checkedAt) {
+        this.operation(() => this.transaction(() => {
+            this.assertCurrent(namespace, generation);
+            this.db.prepare(`INSERT INTO attribution_revisions VALUES (?, 1)
+                ON CONFLICT(namespace) DO UPDATE SET revision = revision + 1`).run(namespace);
+            for (const row of this.db.prepare("SELECT cache_key, payload FROM snapshots WHERE namespace = ? AND resource = 'user'").all(namespace)) {
+                const snapshot = JSON.parse(row.payload);
+                const attribution = snapshot.data.attribution;
+                if (!attribution) continue;
+                invalidateAttribution(attribution, checkedAt);
+                this.db.prepare("UPDATE snapshots SET payload = ? WHERE cache_key = ?")
+                    .run(JSON.stringify(snapshot), row.cache_key);
+            }
+        }));
+    }
 
     fail(key, message, namespace, generation) {
         this.operation(() => this.transaction(() => {
@@ -169,6 +200,7 @@ export class SnapshotStore {
             this.db.prepare(`INSERT INTO cache_contexts VALUES (?, ?) ON CONFLICT(namespace)
                 DO UPDATE SET generation = excluded.generation`).run(namespace, generation + 1);
             this.db.prepare("DELETE FROM snapshots WHERE namespace = ?").run(namespace);
+            this.db.prepare("DELETE FROM attribution_revisions WHERE namespace = ?").run(namespace);
             for (const table of ["relationship_sources", "relationship_centers", "relationship_budgets", "budget_cost_centers"]) {
                 this.db.prepare(`DELETE FROM ${table} WHERE namespace = ?`).run(namespace);
             }
@@ -297,6 +329,7 @@ export class OverviewCache {
     }
 
     async refresh(key, config, context, cached, now, resource, id, namespace, generation) {
+        const attributionRevision = resource === "user" ? this.store.attributionRevision(namespace) : null;
         const read = async (path, host, inspect, identity) => {
             this.store.assertCurrent(namespace, generation);
             const blocked = this.store.deadline(context, this.clock());
@@ -351,10 +384,18 @@ export class OverviewCache {
                     live.enterpriseTeams = {...live.enterpriseTeams, items: retained.items, fetchedAt: retained.fetchedAt};
                 }
             }
+            if (resource === "user" && live.attribution.status !== "confirmed") {
+                const retainedUser = (this.store.get(key) ?? cached)?.data;
+                const previous = retainedUser?.id === live.id ? retainedUser.attribution : null;
+                live.attribution.lastConfirmed = confirmedReference(previous);
+            }
             const snapshot = { kind: resource, data: live, fetchedAt: new Date().toISOString(),
                 ...(["cost-centers", "budgets"].includes(resource) ? {complete: true} : {}),
             };
-            this.store.put(key, snapshot, null, namespace, generation);
+            this.store.put(key, snapshot, null, namespace, generation, resource === "user" ? attributionRevision : undefined);
+            if (["cost-centers", "cost-center-detail", "team-cost-centers"].includes(resource)) {
+                this.store.invalidateAttributions(namespace, generation, snapshot.fetchedAt);
+            }
             return this.present(snapshot, "live", this.store.deadline(context, this.clock()), undefined, namespace);
         }
         const spendingFailed = live.spending.status === "error";
@@ -370,6 +411,20 @@ export class OverviewCache {
         return this.present(snapshot, "live",
             this.store.deadline(context, this.clock()), error);
     }
+}
+
+function invalidateAttribution(attribution, checkedAt) {
+    attribution.lastConfirmed = confirmedReference(attribution);
+    attribution.status = attribution.center ? "provisional" : "unresolved";
+    attribution.invalidatedAt = checkedAt;
+    attribution.reason = "Related cost center or team configuration was refreshed. Refresh this user to recheck all attribution evidence.";
+    attribution.unresolved = [attribution.reason];
+}
+
+function confirmedReference(attribution) {
+    return attribution?.status === "confirmed"
+        ? {center: attribution.center, method: attribution.method, checkedAt: attribution.checkedAt}
+        : attribution?.lastConfirmed ?? null;
 }
 
 let cache;

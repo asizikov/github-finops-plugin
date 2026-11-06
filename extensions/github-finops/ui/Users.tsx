@@ -5,6 +5,7 @@ import {budgetAmount, budgetEntity, scopeLabel} from './budget-format.mjs';
 import {normalizeUsername, resolveUserBudgets, userBudgetEnforcement, type UserData} from './user-format.mjs';
 import EnterpriseTeams from './EnterpriseTeams';
 import UserBudgetExplanation from './UserBudgetExplanation';
+import UserAttribution from './UserAttribution';
 
 export type UserLookup = {query: string; login: string | null};
 type Navigation = {openCenter: (id: string) => void; openBudget: (id: string) => void};
@@ -20,11 +21,15 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
     <SnapshotStatus state={state} />
     {user && impact && <div aria-busy={state.loading}>
       <p className="muted">{month} / {user.accountType} / Budget-tracked amounts in USD, not credit quantities or net billed spending.</p>
+      <UserAttribution user={user} relationships={relationships} cached={state.snapshot?.cache.source === 'cached'}
+        openCenter={openCenter} openBudget={openBudget} />
       <section className="resource-section"><h3>Cost center memberships</h3>
         <p className="caption">Memberships reported for this username. Membership alone does not establish which organization or cost center pays for a request.</p>
         {user.memberships.length ? <div className="user-memberships">{user.memberships.map(center =>
           <div className="notice" key={center.id}><button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button><p className="caption">Membership API / matched by cost center ID</p></div>)}</div> :
-          <p className="empty-results">No cost center memberships returned. This does not establish that the user's usage is unallocated.</p>}
+          <p className="empty-results">{user.attribution?.evidence.direct.state === 'unavailable'
+            ? 'Membership evidence is unavailable or incomplete. No absence of assignments is inferred.'
+            : "No cost center memberships returned. This does not establish that the user's usage is unallocated."}</p>}
       </section>
       <EnterpriseTeams data={user.enterpriseTeams} cached={state.snapshot?.cache.source === 'cached'}
         disabled={state.loading || state.blocked} refresh={() => void state.refresh(true)} openCenter={openCenter} />

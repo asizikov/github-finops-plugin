@@ -33,6 +33,8 @@ function reader({members = membership, pages = [page()], detail = userBudget, te
         if (path.includes("/memberships?")) return members;
         if (path.includes("/budgets?")) return pages[Number(new URL(`https://example.test${path}`).searchParams.get("page")) - 1];
         if (path.includes("/teams?")) return teams;
+        if (path.includes("/cost-centers/center-one?")) return {id:"center-one",name:"Engineering",
+            state:"active",resources:[{type:"User",name:login}],has_next_page:false};
         return detail;
     }};
 }
@@ -64,7 +66,7 @@ test("normalizes pasted usernames without accepting URLs or starting reads for i
     }
 });
 
-test("resolves identity, authoritative membership IDs and every user-budget page without detail fanout", async () => {
+test("resolves identity, memberships and every user-budget page with targeted attribution detail", async () => {
     const {calls,read} = reader({pages:[page([userBudget],{has_next_page:true}),page([defaultBudget])]});
     const result = await loadUser(config,read," @Sample-User ",new Date("2025-01-31T23:59:59Z"));
     assert.equal(result.login,login);
@@ -72,14 +74,12 @@ test("resolves identity, authoritative membership IDs and every user-budget page
     assert.equal(result.filterVerified,true);
     assert.equal(result.budgets.length,2);
     assert.deepEqual(result.period,{year:2025,month:1});
-    assert.equal(calls.length,5);
+    assert.equal(calls.length,6);
     assert.match(calls[3],/user=sample-user&per_page=100&page=2$/);
 });
 
 test("user identity, membership identity and non-progressing or changing budget pages fail explicitly", async () => {
     for (const options of [
-        {members:{...membership,resource:{type:"user",identifier:{login:"different-user"}}}},
-        {members:{...membership,has_next_page:true}},
         {pages:[page([], {user:"different-user"})]},
         {pages:[page([], {has_next_page:true})]},
         {pages:[page([userBudget],{has_next_page:true}),page([userBudget])]},
@@ -108,7 +108,7 @@ test("missing effective metadata never means zero or unlimited; detail consumpti
 test("reports not-found, access denied and unavailable billing distinctly without replacing rate-limit errors", async () => {
     for (const [stage,status,message] of [
         ["profile",404,/User not found or not visible/],["profile",403,/Access denied/],
-        ["memberships",404,/memberships unavailable/],["budgets",403,/Access denied/],
+        ["budgets",403,/Access denied/],
     ]) {
         const source = reader();
         await assert.rejects(loadUser(config,async path => {
@@ -202,9 +202,9 @@ test("cached normalized user searches and restart persistence make zero GitHub c
     const {cache,store,source,path} = cachedSetup(t);
     const result = await cache.get(config,{resource:"user",id:" @Sample-User "});
     assert.equal(result.cache.source,"live");
-    assert.equal(source.calls.length,4);
+    assert.equal(source.calls.length,5);
     assert.equal((await cache.get(config,{resource:"user",id:"SAMPLE-USER"})).cache.source,"cached");
-    assert.equal(source.calls.length,4);
+    assert.equal(source.calls.length,5);
     assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM relationship_budgets").get().n,0);
     const script = `
       import {SnapshotStore,OverviewCache} from ${JSON.stringify(new URL("./cache.mjs",import.meta.url).href)};
@@ -218,6 +218,7 @@ test("cached normalized user searches and restart persistence make zero GitHub c
     assert.equal(restart.cache.source,"cached");
     assert.equal(restart.data.login,login);
     assert.deepEqual(restart.data.enterpriseTeams.items,[]);
+    assert.deepEqual(restart.data.attribution,result.data.attribution);
 });
 
 test("user cache isolates login, host, enterprise, account and billing month", async t => {
@@ -233,7 +234,7 @@ test("user cache isolates login, host, enterprise, account and billing month", a
     assert.equal((await cache.get(config,{...options,id:"renamed-alias"})).cache.source,"live");
     state.now = new Date("2025-02-01T00:00:00Z");
     assert.equal((await cache.get(config,options)).data.period.month,2);
-    assert.equal(state.attempts,24);
+    assert.equal(state.attempts,30);
 });
 
 const team = (id = 1) => ({id, name:`Team ${id}`, slug:`ent:team-${id}`,
@@ -248,7 +249,7 @@ test("enterprise teams paginate at 100 with exact identities, including the full
         return path.endsWith("page=1") ? first : [team(101)];
     }," @Sample-User ");
     assert.equal(result.length,101);
-    assert.deepEqual(result[0],{id:1,name:"Team 1",slug:"ent:team-1",htmlUrl:team().html_url});
+    assert.deepEqual(result[0],{id:1,name:"Team 1",slug:"ent:team-1",htmlUrl:team().html_url,createdAt:null});
     assert.match(calls[0],/\/members\/sample-user\/teams\?per_page=100&page=1$/);
     assert.equal(calls.length,2);
     let reads = 0;

@@ -5,6 +5,27 @@ spending, budgets, cost centers, and on-demand user lookups. Data is read throug
 your locally authenticated GitHub CLI (`gh`) and cached locally in SQLite.
 The plugin does not change enterprise settings.
 
+Users includes **AI spending attribution**: current direct user assignment
+(membership plus explicit user resource), otherwise the oldest qualifying enterprise
+team, otherwise a sole confirmed Copilot license organization. Missing access,
+incomplete evidence, tied/missing team creation dates, or multiple license
+organizations leave the result unresolved rather than assuming Enterprise Only.
+This follows [GitHub's cost center allocation rules](https://docs.github.com/en/enterprise-cloud@latest/billing/reference/cost-center-allocation);
+it is not historical monthly allocation or effective per-user budget selection.
+
+Evidence is collected only for an explicit user lookup/refresh and saved with
+timestamps in the existing account/host/enterprise-scoped SQLite snapshot.
+Warm views make no additional API requests. Refreshing cost center or team
+configuration marks saved attribution provisional/unresolved until that user is
+refreshed; failed checks retain the last confirmed result separately, never as
+a current winner. Cache clear removes both results and evidence.
+Copilot fallback reads the paginated enterprise seats endpoint only when needed,
+retaining only the requested user's organization candidates, not other users'
+seat data. That endpoint accepts existing `read:enterprise` **or**
+`manage_billing:copilot`; the plugin never changes authentication or requests
+broader permissions automatically. Multiple seat-granting organizations do not
+identify the charged organization; use a detailed usage report for that case.
+
 ## Install
 
 Requires a Copilot app/runtime with canvas extension support and `gh` with
