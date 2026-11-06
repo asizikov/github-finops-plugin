@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BaseStyles, ThemeProvider, Button, Label, Spinner, Flash} from '@primer/react';
-import {GraphIcon, OrganizationIcon, CreditCardIcon, PeopleIcon, GearIcon} from '@primer/octicons-react';
+import {CopilotIcon, GraphIcon, OrganizationIcon, CreditCardIcon, PeopleIcon, GearIcon} from '@primer/octicons-react';
 import '@primer/primitives/dist/css/functional/themes/light.css';
 import '@primer/primitives/dist/css/functional/themes/dark.css';
 import './style.css';
@@ -172,7 +172,7 @@ function App() {
     return () => observer.disconnect();
   }, []);
   return <ThemeProvider colorMode={dark ? 'night' : 'day'}><BaseStyles className="canvas-shell">
-    <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true">F</span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div><Label className="header-readonly">Read only</Label></header>
+    <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true"><CopilotIcon size={28} /></span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div></header>
     <div className={`app-layout${startup?.hasOverview ? '' : ' onboarding-layout'}`}>{startup?.hasOverview && <aside className="sidebar"><nav aria-label="Main navigation">{([
       {name: 'Overview', icon: GraphIcon}, {name: 'Cost Centers', icon: OrganizationIcon},
       {name: 'Budgets', icon: CreditCardIcon}, {name: 'Users', icon: PeopleIcon},

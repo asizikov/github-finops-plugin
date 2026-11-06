@@ -36,11 +36,9 @@ export function RelatedBudgets({centerId, relationships, open}: {
 }) {
   const links = relationships?.links.filter(link => link.centerId === centerId) ?? [];
   const coverage = relationships?.lists.budgets;
-  return <section className="resource-section"><h3>Related budgets</h3>
+  return <section className="resource-section related-budgets"><h3>Related budgets</h3>
     <p className="caption">{coverage ? `Saved budget list from ${new Date(coverage.fetchedAt).toLocaleString()}. Relationships may be stale.` :
       'The complete budget list has not been loaded. Saved matches may be incomplete.'}</p>
-    <p className="caption">Name-based associations use exact, unique names from the saved complete cost center list, not an API-supplied foreign key.</p>
-    {relationships?.lists.centers && <p className="caption">Cost center list saved {new Date(relationships.lists.centers.fetchedAt).toLocaleString()}.</p>}
     {coverage?.error && <Flash variant="danger">{coverage.error}</Flash>}
     {relationships?.lists.centers?.error && <Flash variant="danger">{relationships.lists.centers.error}</Flash>}
     {links.length ? <div className="table-scroll center-table"><table>
@@ -55,7 +53,11 @@ export function RelatedBudgets({centerId, relationships, open}: {
           <td><Label>{matchLabel(link.matchedBy)}</Label><p className="caption">Saved {new Date(budget.fetchedAt).toLocaleString()}</p></td>
         </tr>;
       })}</tbody>
-    </table></div> : <p className="muted">No resolved budget links in saved data. This does not establish that no budgets exist.</p>}
-    <p className="caption"><button type="button" className="row-link" onClick={() => open(null)}>Open Budgets</button> to load or refresh the complete list.</p>
+    </table></div> : <p className="relationship-empty">No budget links resolved in saved data. Budgets may still exist.</p>}
+    <p className="budget-list-action"><button type="button" className="row-link" onClick={() => open(null)}>Open Budgets</button> to load or refresh the complete list.</p>
+    <details className="relationship-details"><summary>How budget links are matched</summary>
+      <p>Links match cost center IDs. Name-based matches require an exact, unique name in the saved complete cost center list and are not API-supplied relationships.</p>
+      {relationships?.lists.centers ? <p>Cost center list saved {new Date(relationships.lists.centers.fetchedAt).toLocaleString()}.</p> : <p>The complete cost center list has not been loaded. Name-based matches are unavailable.</p>}
+    </details>
   </section>;
 }
