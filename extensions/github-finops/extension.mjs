@@ -1,6 +1,5 @@
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import { startServer, readSettings } from "./server.mjs";
-import {validateInput} from "./budgets.mjs";
 
 const servers = new Map();
 
@@ -16,7 +15,6 @@ await joinSession({
                     enterprise: { type: "string", pattern: "^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$" },
                     host: { type: "string", description: "GitHub hostname; defaults to github.com." },
                 },
-                required: ["enterprise"],
                 additionalProperties: false,
             },
             actions: [{
@@ -26,8 +24,10 @@ await joinSession({
                 handler: async ctx => {
                     const entry = servers.get(ctx.instanceId);
                     if (!entry) throw new CanvasError("canvas_not_open", "Open GitHub FinOps with the intended enterprise first.");
-                    await entry.pending;
-                    return readSettings(validateInput(JSON.parse(entry.configKey)), ctx.input?.refresh === true);
+                    const {getConfig} = await entry.pending;
+                    const config = getConfig();
+                    if (!config) throw new CanvasError("enterprise_not_configured", "Connect an enterprise in the canvas first.");
+                    return readSettings(config, ctx.input?.refresh === true);
                 },
             }],
             open: async (ctx) => {

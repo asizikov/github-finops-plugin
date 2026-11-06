@@ -7,9 +7,14 @@ read-only GraphQL query via POST (never a mutation). Tokens are never sent to
 the iframe.
 
 Load this directory as a local plugin with `copilot --plugin-dir .`. Open the
-`github-finops` canvas with input containing an `enterprise` slug and optional
-`host` hostname (default: `github.com`). Enterprise identifiers belong in canvas
-input, not tracked files. The overview intentionally does not display the slug.
+`github-finops` canvas without input for the Connect your enterprise page, or
+provide an `enterprise` slug and optional `host` hostname (default: `github.com`).
+Without a saved overview for the active account, Check connection performs
+deliberate read-only probes before Load overview. Enterprise teams are optional.
+The confirmed target is remembered in user-local `target.json` beside the cache;
+opening a cold canvas does not create the SQLite database. Valid saved overviews,
+including empty results, open without live checks. Enterprise identifiers belong
+in canvas input or user-local configuration, never tracked files.
 
 Renderer assets are bundled inside the extension for distribution; consumers do
 not need npm or a frontend server. After editing the UI, run:

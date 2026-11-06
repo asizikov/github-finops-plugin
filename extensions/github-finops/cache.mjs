@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, openSync, closeSync, chmodSync } from "node:fs";
+import { mkdirSync, openSync, closeSync, chmodSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
@@ -275,6 +275,7 @@ export function databasePath() {
     return resolve(root, "cache.sqlite");
 }
 export function cachedOverview(input, options) {
+    if (options?.cacheOnly && !cache && !existsSync(databasePath())) return Promise.resolve(null);
     if (!cache) {
         cache = new OverviewCache(new SnapshotStore(databasePath()));
     }

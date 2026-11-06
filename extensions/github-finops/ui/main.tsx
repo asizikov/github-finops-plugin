@@ -9,6 +9,7 @@ import CostCenters from './CostCenters';
 import Budgets from './Budgets';
 import Users, {type UserLookup} from './Users';
 import Settings from './Settings';
+import Onboarding, {type Startup} from './Onboarding';
 import type {ListState} from './pagination.mjs';
 
 type Budget = {
@@ -139,6 +140,18 @@ type Page = 'Overview' | 'Cost Centers' | 'Budgets' | 'Users' | 'Settings';
 type Route = {page: Page; id?: string};
 
 function App() {
+  const [startup,setStartup] = useState<Startup | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch('./startup',{signal:controller.signal,cache:'no-store'}).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? 'Could not read startup information.');
+      if (!controller.signal.aborted) setStartup(data);
+    }).catch(error => {
+      if (!controller.signal.aborted) setStartup({target:null,hasOverview:false,cli:null,platform:'unknown',error:error instanceof Error ? error.message : 'Could not read startup information.'});
+    });
+    return () => controller.abort();
+  },[]);
   const [history, setHistory] = useState<Route[]>([{page:'Overview'}]);
   const [centerList, setCenterList] = useState<ListState>({query:'',page:1});
   const [budgetList, setBudgetList] = useState<ListState>({query:'',page:1});
@@ -158,13 +171,15 @@ function App() {
   }, []);
   return <ThemeProvider colorMode={dark ? 'night' : 'day'}><BaseStyles className="canvas-shell">
     <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true">F</span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div><Label className="header-readonly">Read only</Label></header>
-    <div className="app-layout"><aside className="sidebar"><nav aria-label="Main navigation">{([
+    <div className={`app-layout${startup?.hasOverview ? '' : ' onboarding-layout'}`}>{startup?.hasOverview && <aside className="sidebar"><nav aria-label="Main navigation">{([
       {name: 'Overview', icon: GraphIcon}, {name: 'Cost Centers', icon: OrganizationIcon},
       {name: 'Budgets', icon: CreditCardIcon}, {name: 'Users', icon: PeopleIcon},
       {name: 'Settings', icon: GearIcon},
-    ] satisfies {name: Page; icon: typeof GraphIcon}[]).map(item => <Button key={item.name} block variant="invisible" alignContent="start" leadingVisual={item.icon} aria-current={page === item.name ? 'page' : undefined} onClick={() => setHistory([{page:item.name}])}>{item.name}</Button>)}</nav></aside>
-      <div className="page-scroll" tabIndex={0} role="region" aria-label={`${page} page content`} key={`${page}-${route.id ?? ''}`}>
-      {page === 'Overview' ? <OverviewPage /> : page === 'Settings' ? <Settings /> : page === 'Cost Centers' ?
+    ] satisfies {name: Page; icon: typeof GraphIcon}[]).map(item => <Button key={item.name} block variant="invisible" alignContent="start" leadingVisual={item.icon} aria-current={page === item.name ? 'page' : undefined} onClick={() => setHistory([{page:item.name}])}>{item.name}</Button>)}</nav></aside>}
+      <div className="page-scroll" tabIndex={0} role="region" aria-label={startup?.hasOverview ? `${page} page content` : 'Connect your enterprise'} key={`${startup?.hasOverview}-${page}-${route.id ?? ''}`}>
+      {!startup ? <main><h2>GitHub FinOps</h2><p role="status">Reading local startup information...</p></main> : !startup.hasOverview ?
+        <Onboarding startup={startup} connected={() => setStartup({...startup,hasOverview:true})} /> :
+      page === 'Overview' ? <OverviewPage /> : page === 'Settings' ? <Settings /> : page === 'Cost Centers' ?
         <CostCenters selected={route.id} list={centerList} setList={setCenterList} select={id => open({page:'Cost Centers',id})} back={back} backLabel={backLabel} openBudget={id => open({page:'Budgets',...(id ? {id} : {})})} /> :
         page === 'Budgets' ? <Budgets selected={route.id} list={budgetList} setList={setBudgetList} select={id => open({page:'Budgets',id})} back={back} backLabel={backLabel} canGoBack={history.length > 1} openCenter={id => open({page:'Cost Centers',id})} /> :
         <Users lookup={userLookup} setLookup={setUserLookup} openCenter={id => open({page:'Cost Centers',id})} openBudget={id => open({page:'Budgets',id})} />}

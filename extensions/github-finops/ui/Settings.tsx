@@ -6,16 +6,16 @@ type Connection = {
   data: {login: string | null; name: string | null; loginAt: string | null; nameAt: string | null; scopes: string[] | null; readEnterpriseScope: string; checkedAt: string; checks: Check[]};
   cache: {source: string; error: string | null; retryAt: string | null};
 };
-type SettingsData = {
+export type SettingsData = {
   version: {version: string; revision: string | null; dirty: boolean | null};
   database: string; authSource: string; target: {enterprise: string; host: string};
   connection: Connection | null; connectionError?: string | null; retryAt?: string | null;
 };
-const labels: Record<string,string> = {
+export const labels: Record<string,string> = {
   authentication: 'GitHub authentication', enterprise: 'Enterprise identity', budgets: 'Billing budgets',
   cost_centers: 'Cost centers', ai_usage: 'Current-month AI usage', enterprise_teams: 'Enterprise teams',
 };
-const states: Record<string,string> = {
+export const states: Record<string,string> = {
   accessible: 'Accessible', unauthenticated: 'Authentication rejected', forbidden: 'Forbidden', missing_scope: 'Missing scope',
   unavailable: 'Unavailable / unsupported', rate_limited: 'Rate limited', unknown: 'Unknown', not_checked: 'Not checked',
 };

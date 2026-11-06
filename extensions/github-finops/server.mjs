@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { validateInput } from "./budgets.mjs";
 import { cachedOverview, databasePath } from "./cache.mjs";
 import {versionInfo, authSource, revealDatabase} from "./settings.mjs";
+import {readTarget, saveTarget, cliStatus, parseEnterpriseUrl, canLoadOverview} from "./onboarding.mjs";
 
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -26,8 +27,18 @@ export async function readSettings(config, refresh = false, {
         target: config, connection, connectionError, retryAt};
 }
 
-export async function startServer(input, load = cachedOverview, {version = versionInfo, reveal = revealDatabase, dbPath = databasePath} = {}) {
-    const config = validateInput(input);
+export async function startServer(input, load = cachedOverview, {
+    version = versionInfo, reveal = revealDatabase, dbPath = databasePath,
+    restoreTarget = readTarget, persistTarget = saveTarget, cli = cliStatus,
+} = {}) {
+    let config = null;
+    let startupError = null;
+    let checkedTarget = null;
+    if (input && Object.keys(input).length) config = validateInput(input);
+    else {
+        try { config = await restoreTarget(); }
+        catch (error) { console.error("Saved target read failed:", error); startupError = error.message; }
+    }
     const prefix = `/${randomBytes(24).toString("hex")}/`;
     const [js, css] = await Promise.all([
         readFile(new URL("./assets/app.js", import.meta.url)),
@@ -45,6 +56,40 @@ export async function startServer(input, load = cachedOverview, {version = versi
             return;
         }
         const route = req.url?.startsWith(prefix) ? req.url.slice(prefix.length) : null;
+        if ((route === "connect/check" || route === "connect/load") && req.method === "POST") {
+            res.setHeader("Content-Type", "application/json");
+            if (req.headers.origin !== `http://${req.headers.host}`) {
+                res.writeHead(403).end(JSON.stringify({error: "Connecting requires a same-origin request."}));
+                return;
+            }
+            try {
+                let body = "";
+                for await (const chunk of req) {
+                    body += chunk;
+                    if (Buffer.byteLength(body) > 4096) throw new Error("Connection input is too large.");
+                }
+                const target = parseEnterpriseUrl(JSON.parse(body).enterpriseUrl);
+                if (route === "connect/check") {
+                    const prerequisites = await cli();
+                    if (!prerequisites.installed) throw new Error(prerequisites.error);
+                    checkedTarget = null;
+                    const settings = await readSettings(target, true, {load, version, dbPath});
+                    if (canLoadOverview(settings.connection)) checkedTarget = JSON.stringify(target);
+                    res.end(JSON.stringify({...settings, cli: prerequisites}));
+                } else {
+                    if (checkedTarget !== JSON.stringify(target)) throw new Error("Check this enterprise connection successfully before loading the overview.");
+                    await load(target, {refresh: false});
+                    await persistTarget(target);
+                    config = target;
+                    startupError = null;
+                    res.end(JSON.stringify({target}));
+                }
+            } catch (error) {
+                console.error("Enterprise connection failed:", error);
+                res.writeHead(400).end(JSON.stringify({error: error.publicMessage ?? error.message, retryAt: error.retryAt ?? null}));
+            }
+            return;
+        }
         if (route === "settings/reveal" && req.method === "POST") {
             res.setHeader("Content-Type", "application/json");
             if (req.headers.origin !== `http://${req.headers.host}`) {
@@ -60,6 +105,29 @@ export async function startServer(input, load = cachedOverview, {version = versi
         }
         if (req.method !== "GET") {
             res.writeHead(405, { Allow: "GET" }).end();
+            return;
+        }
+        if (route === "startup") {
+            res.setHeader("Content-Type", "application/json");
+            try {
+                let error = startupError;
+                let snapshot = null;
+                if (config) {
+                    try { snapshot = await load(config, {cacheOnly: true}); }
+                    catch (cause) {
+                        console.error("Startup cache read failed:", cause);
+                        error = cause.publicMessage ?? "Could not read this account's saved overview. Check the connection to continue.";
+                    }
+                }
+                res.end(JSON.stringify({target: config, hasOverview: snapshot !== null, cli: await cli(), platform: process.platform, error}));
+            } catch (error) {
+                console.error("Startup read failed:", error);
+                res.writeHead(500).end(JSON.stringify({error: "Could not read local startup information."}));
+            }
+            return;
+        }
+        if (!config && route !== "" && route !== "app.js" && route !== "app.css") {
+            res.writeHead(409, {"Content-Type": "application/json"}).end(JSON.stringify({error: "Connect your enterprise first."}));
             return;
         }
         if (route === "settings" || route === "settings?refresh=1") {
@@ -115,5 +183,5 @@ export async function startServer(input, load = cachedOverview, {version = versi
     });
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Canvas server did not acquire a loopback port.");
-    return { server, url: `http://127.0.0.1:${address.port}${prefix}` };
+    return { server, url: `http://127.0.0.1:${address.port}${prefix}`, getConfig: () => config };
 }
