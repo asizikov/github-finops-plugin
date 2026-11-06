@@ -1,0 +1,26 @@
+{
+  "name": "github-finops-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --test extensions/github-finops/*.test.mjs"
+  },
+  "dependencies": {
+    "@primer/octicons-react": "19.42.0",
+    "@primer/primitives": "11.10.0",
+    "@primer/react": "38.43.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-is": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/react-is": "^19.2.0",
+    "esbuild": "0.28.2",
+    "typescript": "^5.9.3"
+  }
+}

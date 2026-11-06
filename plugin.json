@@ -1,0 +1,7 @@
+{
+  "name": "github-finops-plugin",
+  "version": "0.1.0",
+  "description": "Read-only enterprise AI Credits budget overview.",
+  "license": "MIT",
+  "extensions": "./extensions"
+}

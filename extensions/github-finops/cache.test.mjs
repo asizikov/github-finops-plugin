@@ -1,0 +1,196 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { SnapshotStore, OverviewCache } from "./cache.mjs";
+import { GitHubReadError } from "./github.mjs";
+
+const input = { enterprise: "example-enterprise" };
+
+function setup(t) {
+    const root = mkdtempSync(join(tmpdir(), "finops-cache-"));
+    const path = join(root, "cache.sqlite");
+    const store = new SnapshotStore(path);
+    const state = { calls: 0, account: "account-one", now: new Date("2025-01-02T00:00:00Z"), failure: null, spendingFailure: false };
+    const read = async url => {
+        state.calls++;
+        if (state.failure) throw state.failure;
+        if (url.includes("/ai_credit/usage")) {
+            if (state.spendingFailure) throw new Error("Spending unavailable");
+            const params = new URL(`https://example.test${url}`).searchParams;
+            return { timePeriod: { year: Number(params.get("year")), month: Number(params.get("month")) },
+                usageItems: [{ unitType: "ai-credits", grossAmount: 2, discountAmount: 1, netAmount: 1 }] };
+        }
+        return { budgets: [], has_next_page: false };
+    };
+    const options = { identity: async () => state.account, clock: () => state.now, read };
+    const cache = new OverviewCache(store, options);
+    t.after(() => { store.close(); rmSync(root, { recursive: true }); });
+    return { store, cache, state, path, options };
+}
+
+test("cold start fetches once; concurrent and repeated warm opens make zero additional GitHub calls", async t => {
+    const { cache, state } = setup(t);
+    const [first, second] = await Promise.all([cache.get(input), cache.get(input)]);
+    assert.equal(state.calls, 3);
+    assert.equal(first.cache.source, "live");
+    assert.equal(second.spending.net, 1);
+    for (let i = 0; i < 3; i++) {
+        assert.equal((await cache.get(input)).cache.source, "cached");
+    }
+    assert.equal(state.calls, 3);
+});
+
+test("snapshots persist across a new Node process without API reads", async t => {
+    const { cache, path } = setup(t);
+    await cache.get(input);
+    const script = `
+      import {SnapshotStore, OverviewCache} from ${JSON.stringify(new URL("./cache.mjs", import.meta.url).href)};
+      const store = new SnapshotStore(${JSON.stringify(path)});
+      const cache = new OverviewCache(store, {
+        identity: async () => "account-one",
+        clock: () => new Date("2025-01-02T00:00:00Z"),
+        read: async () => { throw new Error("A warm restart must not query GitHub"); }
+      });
+      console.log(JSON.stringify(await cache.get({enterprise:"example-enterprise"})));
+      store.close();
+    `;
+    const persisted = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+    assert.equal(persisted.cache.source, "cached");
+    assert.equal(persisted.spending.net, 1);
+});
+
+test("isolates account, enterprise, host and UTC billing month", async t => {
+    const { cache, state } = setup(t);
+    await cache.get(input);
+    state.account = "account-two";
+    assert.equal((await cache.get(input)).cache.source, "live");
+    state.account = "account-one";
+    assert.equal((await cache.get(input)).cache.source, "cached");
+    assert.equal((await cache.get({ enterprise: "another-enterprise" })).cache.source, "live");
+    assert.equal((await cache.get({ ...input, host: "another.example" })).cache.source, "live");
+    state.now = new Date("2025-02-01T00:00:00Z");
+    const rolled = await cache.get(input);
+    assert.equal(rolled.cache.source, "live");
+    assert.equal(rolled.spending.period.month, 2);
+    assert.equal(state.calls, 15);
+});
+
+test("failed live refresh preserves successful data and reports stale/error status on later opens", async t => {
+    t.mock.method(console, "error", () => {});
+    const { cache, state } = setup(t);
+    const first = await cache.get(input);
+    state.failure = new Error("Offline");
+    const failed = await cache.get(input, { refresh: true });
+    assert.equal(failed.spending.net, first.spending.net);
+    assert.equal(failed.cache.spendingAt, first.cache.spendingAt);
+    assert.equal(failed.cache.stale, true);
+    assert.match(failed.cache.error, /refresh failed/);
+    const calls = state.calls;
+    const warm = await cache.get(input);
+    assert.equal(warm.cache.error, failed.cache.error);
+    assert.equal(state.calls, calls);
+});
+
+test("a partial refresh does not overwrite previously successful spending", async t => {
+    t.mock.method(console, "error", () => {});
+    const { cache, state } = setup(t);
+    const first = await cache.get(input);
+    state.spendingFailure = true;
+    const partial = await cache.get(input, { refresh: true });
+    assert.equal(partial.spending.status, "available");
+    assert.equal(partial.spending.net, 1);
+    assert.equal(partial.cache.spendingAt, first.cache.spendingAt);
+    assert.equal(partial.cache.source, "live");
+    assert.equal(partial.cache.stale, true);
+    assert.match(partial.cache.error, /current AI spending/);
+});
+
+test("cold-start budgets remain cached even when spending is inaccessible", async t => {
+    t.mock.method(console, "error", () => {});
+    const { cache, state } = setup(t);
+    state.spendingFailure = true;
+    const first = await cache.get(input);
+    assert.equal(first.spending.status, "error");
+    const calls = state.calls;
+    const warm = await cache.get(input);
+    assert.equal(warm.cache.source, "cached");
+    assert.equal(warm.budgets.length, 2);
+    assert.equal(warm.cache.spendingAt, null);
+    assert.equal(state.calls, calls);
+});
+
+test("cached data is not accessible without the matching local credential context", async t => {
+    const { cache, store, options, state } = setup(t);
+    await cache.get(input);
+    const signedOut = new OverviewCache(store, {
+        ...options, identity: async () => { throw new Error("Not signed in"); },
+    });
+    await assert.rejects(signedOut.get(input), /Not signed in/);
+    assert.equal(state.calls, 3);
+});
+
+test("rate-limit cooldown persists and blocks repeated refreshes including month-rollover misses", async t => {
+    t.mock.method(console, "error", () => {});
+    const { cache, store, state, options } = setup(t);
+    await cache.get(input);
+    const retryAt = "2025-02-01T00:10:00Z";
+    state.failure = new GitHubReadError("Rate limited", retryAt);
+    const limited = await cache.get(input, { refresh: true });
+    assert.equal(limited.cache.retryAt, retryAt);
+    const calls = state.calls;
+    const restarted = new OverviewCache(store, options);
+    await restarted.get(input, { refresh: true });
+    assert.equal(state.calls, calls);
+    state.now = new Date("2025-02-01T00:00:00Z");
+    await assert.rejects(restarted.get(input), /No snapshot/);
+    assert.equal(state.calls, calls);
+    state.now = new Date("2025-02-01T00:11:00Z");
+    state.failure = null;
+    assert.equal((await restarted.get(input)).cache.source, "live");
+    assert.equal(state.calls, calls + 3);
+});
+
+test("cold failure is explicit; SQLite read/write failures never bypass the cache", async t => {
+    t.mock.method(console, "error", () => {});
+    const { cache, state, store } = setup(t);
+    state.failure = new Error("Unavailable");
+    await assert.rejects(cache.get(input), /Unavailable/);
+    state.failure = null;
+    store.db.exec("CREATE TRIGGER deny_snapshot BEFORE INSERT ON snapshots BEGIN SELECT RAISE(FAIL, 'write denied'); END;");
+    await assert.rejects(cache.get(input), /local SQLite cache/);
+    const calls = state.calls;
+    store.db.exec("DROP TABLE snapshots");
+    await assert.rejects(cache.get(input), /local SQLite cache/);
+    assert.equal(state.calls, calls);
+});
+
+test("list/detail caches reuse durable snapshots and retain data/errors independently", async t => {
+    t.mock.method(console, "error", () => {});
+    const {store, options, state} = setup(t);
+    let calls = 0;
+    let fail = false;
+    const cache = new OverviewCache(store, {...options, read: async path => {
+        calls++;
+        if (fail) throw new Error("Offline");
+        const center = {id:"center-one",name:"Engineering",state:"active",resources:[],ai_credit_pool_enabled:false};
+        return path.endsWith("/cost-centers") ? {costCenters:[center]} : {...center,has_next_page:false};
+    }});
+    await cache.get(input, {resource:"cost-centers"});
+    await cache.get(input, {resource:"cost-center-detail",id:"center-one"});
+    const firstCalls = calls;
+    const restarted = new OverviewCache(store, {...options, read: async () => {throw new Error("Unexpected API call");}});
+    assert.equal((await restarted.get(input,{resource:"cost-centers"})).cache.source,"cached");
+    assert.equal((await restarted.get(input,{resource:"cost-center-detail",id:"center-one"})).data.name,"Engineering");
+    assert.equal(calls,firstCalls);
+    state.now = new Date("2025-02-01T00:00:00Z");
+    assert.equal((await cache.get(input,{resource:"cost-centers"})).cache.source,"cached");
+    fail = true;
+    const retained = await cache.get(input,{resource:"cost-center-detail",id:"center-one",refresh:true});
+    assert.equal(retained.data.name,"Engineering");
+    assert.match(retained.cache.error,/refresh failed/);
+    state.account = "account-two";
+    await assert.rejects(cache.get(input,{resource:"cost-centers"}),/Offline/);
+});
