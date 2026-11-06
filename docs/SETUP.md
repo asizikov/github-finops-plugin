@@ -225,8 +225,8 @@ SQLite file location; Open reveals that file on macOS/Windows or opens its paren
 folder on Linux. Only this backend-selected cache location can be opened.
 Unsupported systems and file-manager errors are reported explicitly.
 
-`package.json` is the authoritative Semantic Versioning source, starting at
-`0.1.0`. Use `npm version patch --no-git-tag-version` (or `minor`/`major` as
+`package.json` is the authoritative Semantic Versioning source.
+Use `npm version patch --no-git-tag-version` (or `minor`/`major` as
 appropriate) to update package/lock versions; the version hook synchronizes
 `plugin.json`. Builds reject mismatched manifest versions. Settings reads the
 version at runtime, plus the development checkout's short Git revision and
