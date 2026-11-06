@@ -4,6 +4,7 @@ import {GitHubReadError} from "./github.mjs";
 import {normalizeUsername} from "./ui/user-format.mjs";
 import {loadResourceMemberships} from "./memberships.mjs";
 import {loadEnterpriseTeams, enterpriseTeamFailure} from "./enterprise-teams.mjs";
+import {collectAttribution, evidenceFailure} from "./attribution.mjs";
 
 async function userRead(read, path, host, stage) {
     try { return await read(path, host); } catch (error) {
@@ -32,7 +33,11 @@ export async function loadUser({enterprise, host}, read, username, now = new Dat
         !["User", "Bot"].includes(profile.type)) throw new Error("GitHub did not return a valid user account.");
     const login = normalizeUsername(profile.login);
     const base = `/enterprises/${encodeURIComponent(enterprise)}/settings/billing`;
-    const memberships = await loadResourceMemberships({enterprise, host}, read, "user", login);
+    let membershipEvidence;
+    try {
+        membershipEvidence = {state: "complete", items: await loadResourceMemberships({enterprise, host}, read, "user", login)};
+    } catch (error) { membershipEvidence = {...evidenceFailure(error), items: []}; }
+    const memberships = membershipEvidence.items;
     const budgets = [];
     const budgetIds = new Set();
     let effective = null;
@@ -79,7 +84,8 @@ export async function loadUser({enterprise, host}, read, username, now = new Dat
     } catch (error) {
         enterpriseTeams = enterpriseTeamFailure(error);
     }
-    return {login: profile.login, id: profile.id, accountType: profile.type, enterpriseTeams,
+    const attribution = await collectAttribution({enterprise, host}, read, login, membershipEvidence, enterpriseTeams, now);
+    return {login: profile.login, id: profile.id, accountType: profile.type, enterpriseTeams, attribution,
         period: {year: now.getUTCFullYear(), month: now.getUTCMonth() + 1},
         memberships, budgets, effective, effectiveStatus, filterVerified};
 }

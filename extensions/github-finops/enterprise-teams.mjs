@@ -32,7 +32,9 @@ export async function loadEnterpriseTeams({enterprise, host}, read, username) {
             if (ids.has(team.id) || slugs.has(team.slug)) throw new Error("GitHub repeated enterprise teams while paginating.");
             ids.add(team.id);
             slugs.add(team.slug);
-            teams.push({id: team.id, name: team.name, slug: team.slug, htmlUrl: url.href});
+            teams.push({id: team.id, name: team.name, slug: team.slug, htmlUrl: url.href,
+                createdAt: typeof team.created_at === "string" && Number.isFinite(Date.parse(team.created_at))
+                    ? team.created_at : null});
         }
         if (response.length < 100) return teams;
     }

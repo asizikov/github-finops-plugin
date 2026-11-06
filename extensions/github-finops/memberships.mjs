@@ -3,7 +3,7 @@ import {GitHubReadError} from "./github.mjs";
 import {normalizeUsername} from "./ui/user-format.mjs";
 
 export async function loadResourceMemberships({enterprise, host}, read, type, name) {
-    if (!["user", "team"].includes(type)) throw new Error("Invalid membership resource type.");
+    if (!["user", "team", "organization"].includes(type)) throw new Error("Invalid membership resource type.");
     const base = `/enterprises/${encodeURIComponent(enterprise)}/settings/billing/cost-centers/memberships`;
     const memberships = [];
     const ids = new Set();
@@ -19,9 +19,9 @@ export async function loadResourceMemberships({enterprise, host}, read, type, na
                 `Access denied while reading ${type} memberships. Check the active gh account and enterprise billing permissions.`, null, error.status);
             throw error;
         }
-        const identifier = response.resource?.identifier?.[type === "user" ? "login" : "slug"];
+        const identifier = response.resource?.identifier?.[type === "user" ? "login" : type === "team" ? "slug" : "name"];
         if (response.resource?.type !== type || typeof identifier !== "string" ||
-            (type === "user" ? normalizeUsername(identifier) !== name : identifier !== name) ||
+            (type !== "team" ? normalizeUsername(identifier) !== name.toLowerCase() : identifier !== name) ||
             !Array.isArray(response.memberships) ||
             (response.has_next_page != null && typeof response.has_next_page !== "boolean") ||
             (response.has_next_page && response.memberships.length === 0)) {
