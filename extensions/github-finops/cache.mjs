@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, openSync, closeSync, chmodSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { loadOverview, validateInput } from "./budgets.mjs";
@@ -11,8 +11,9 @@ import { relationshipSchema, indexRelationships, readRelationships } from "./rel
 import {loadUser} from "./users.mjs";
 import {normalizeUsername} from "./ui/user-format.mjs";
 import {loadTeamCostCenters, validateTeamSlug} from "./enterprise-teams.mjs";
+import {loadConnection} from "./settings.mjs";
 
-const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail", "user", "team-cost-centers"];
+const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail", "user", "team-cost-centers", "connection"];
 
 class LocalCacheError extends Error {
     constructor(cause) {
@@ -153,7 +154,7 @@ export class OverviewCache {
         };
     }
 
-    async get(input, { refresh = false, resource = "overview", id } = {}) {
+    async get(input, { refresh = false, resource = "overview", id, cacheOnly = false } = {}) {
         if (resource !== "overview" && !configurationResources.includes(resource)) throw new Error("Invalid cache resource.");
         if (resource === "cost-center-detail") validateCenterId(id);
         if (resource === "budget-detail") validateBudgetId(id);
@@ -183,6 +184,7 @@ export class OverviewCache {
             if (cached) return this.present(cached, "cached", retryAt, message, namespace);
             throw new GitHubReadError(`${message} No snapshot is available for this account${resource === "overview" ? " and billing month" : ""}.`, retryAt);
         }
+        if (cacheOnly && !cached) return null;
         if (!refresh && cached) return this.present(cached, "cached", null, undefined, namespace);
         let pending = this.pending.get(key);
         if (!pending) {
@@ -194,11 +196,11 @@ export class OverviewCache {
     }
 
     async refresh(key, config, context, cached, now, resource, id, namespace) {
-        const read = async (path, host) => {
+        const read = async (path, host, inspect) => {
             const blocked = this.store.deadline(context, this.clock());
             if (blocked) throw new GitHubReadError("GitHub rate-limit cooldown is active.", blocked);
             try {
-                return await this.read(path, host, retryAt => this.store.limit(context, retryAt));
+                return await this.read(path, host, retryAt => this.store.limit(context, retryAt), inspect);
             } catch (error) {
                 if (error.retryAt) this.store.limit(context, error.retryAt);
                 throw error;
@@ -209,6 +211,7 @@ export class OverviewCache {
             live = resource === "overview" ? await this.load(config, read, now)
                 : resource === "user" ? await loadUser(config, read, id, now)
                 : resource === "team-cost-centers" ? await loadTeamCostCenters(config, read, id)
+                : resource === "connection" ? await loadConnection(config, read, now)
                 : resource === "budgets" || resource === "budget-detail"
                     ? await loadBudgets(config, read, resource === "budget-detail" ? id : undefined)
                     : await loadCostCenters(config, read, resource === "cost-center-detail" ? id : undefined);
@@ -223,6 +226,18 @@ export class OverviewCache {
             return this.present(retained, "cached", this.store.deadline(context, this.clock()), message, namespace);
         }
         if (resource !== "overview") {
+            if (resource === "connection") {
+                const retained = (this.store.get(key) ?? cached)?.data;
+                live.checks = live.checks.map(check => ({...check,
+                    lastAccessibleAt: check.state === "accessible" ? live.checkedAt :
+                        retained?.checks.find(previous => previous.key === check.key)?.lastAccessibleAt ?? null}));
+                for (const field of ["name", "login"]) {
+                    if (live[field] === null && retained?.[field]) {
+                        live[field] = retained[field];
+                        live[`${field}At`] = retained[`${field}At`];
+                    }
+                }
+            }
             if (resource === "user" && live.enterpriseTeams.error) {
                 const retainedUser = (this.store.get(key) ?? cached)?.data;
                 const retained = retainedUser?.id === live.id ? retainedUser.enterpriseTeams : null;
@@ -252,13 +267,16 @@ export class OverviewCache {
 }
 
 let cache;
+export function databasePath() {
+    const root = process.env.GITHUB_FINOPS_CACHE_DIR ?? join(
+        process.env.COPILOT_HOME ?? join(homedir(), ".copilot"),
+        "extensions", "github-finops", "artifacts",
+    );
+    return resolve(root, "cache.sqlite");
+}
 export function cachedOverview(input, options) {
     if (!cache) {
-        const root = process.env.GITHUB_FINOPS_CACHE_DIR ?? join(
-            process.env.COPILOT_HOME ?? join(homedir(), ".copilot"),
-            "extensions", "github-finops", "artifacts",
-        );
-        cache = new OverviewCache(new SnapshotStore(join(root, "cache.sqlite")));
+        cache = new OverviewCache(new SnapshotStore(databasePath()));
     }
     return cache.get(input, options);
 }

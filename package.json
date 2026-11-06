@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "version": "node scripts/sync-version.mjs",
     "build": "node scripts/build.mjs",
     "check": "tsc --noEmit",
     "test": "node --test extensions/github-finops/*.test.mjs"

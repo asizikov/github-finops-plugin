@@ -45,7 +45,14 @@ export function rateLimitDeadline({ status, headers, body }, now = Date.now()) {
     return deadline === null ? null : new Date(deadline).toISOString();
 }
 
-export async function ghRead(path, host, onLimit) {
+export function authMetadata(headers) {
+    const header = headers.get("x-oauth-scopes");
+    const scopes = header == null ? null : header.split(",").map(value => value.trim()).filter(Boolean);
+    if (scopes?.some(scope => !/^[a-z_]+(?::[a-z_]+)*$/.test(scope))) throw new Error("GitHub returned invalid scope metadata.");
+    return {scopes};
+}
+
+export async function ghRead(path, host, onLimit, inspect) {
     let stdout;
     try {
         ({ stdout } = await exec("gh", [
@@ -66,6 +73,7 @@ export async function ghRead(path, host, onLimit) {
         retryAt, status);
     }
     const response = parseResponse(stdout);
+    if (inspect) inspect(authMetadata(response.headers));
     const data = JSON.parse(response.body);
     const retryAt = rateLimitDeadline(response);
     if (retryAt) onLimit?.(retryAt);

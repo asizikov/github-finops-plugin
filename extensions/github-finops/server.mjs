@@ -2,14 +2,31 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { validateInput } from "./budgets.mjs";
-import { cachedOverview } from "./cache.mjs";
+import { cachedOverview, databasePath } from "./cache.mjs";
+import {versionInfo, authSource, revealDatabase} from "./settings.mjs";
 
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GitHub FinOps</title><link rel="stylesheet" href="./app.css"></head>
 <body><div id="root"></div><script src="./app.js" defer></script></body></html>`;
 
-export async function startServer(input, load = cachedOverview) {
+export async function readSettings(config, refresh = false, {
+    load = cachedOverview, version = versionInfo, dbPath = databasePath,
+} = {}) {
+    let connection = null;
+    let connectionError = null;
+    let retryAt = null;
+    try { connection = await load(config, {resource: "connection", refresh, cacheOnly: !refresh}); }
+    catch (error) {
+        console.error("Settings connection check failed:", error);
+        connectionError = error.publicMessage ?? "Could not read connection checks. Check local gh authentication and cache access.";
+        retryAt = error.retryAt ?? null;
+    }
+    return {version: await version(), database: dbPath(), authSource: authSource(config.host),
+        target: config, connection, connectionError, retryAt};
+}
+
+export async function startServer(input, load = cachedOverview, {version = versionInfo, reveal = revealDatabase, dbPath = databasePath} = {}) {
     const config = validateInput(input);
     const prefix = `/${randomBytes(24).toString("hex")}/`;
     const [js, css] = await Promise.all([
@@ -27,11 +44,34 @@ export async function startServer(input, load = cachedOverview) {
             res.writeHead(403).end();
             return;
         }
+        const route = req.url?.startsWith(prefix) ? req.url.slice(prefix.length) : null;
+        if (route === "settings/reveal" && req.method === "POST") {
+            res.setHeader("Content-Type", "application/json");
+            if (req.headers.origin !== `http://${req.headers.host}`) {
+                res.writeHead(403).end(JSON.stringify({error: "Opening the cache folder requires a same-origin request."}));
+                return;
+            }
+            try { res.end(JSON.stringify(await reveal(dbPath()))); }
+            catch (error) {
+                console.error("Cache reveal failed:", error);
+                res.writeHead(500).end(JSON.stringify({error: error.message}));
+            }
+            return;
+        }
         if (req.method !== "GET") {
             res.writeHead(405, { Allow: "GET" }).end();
             return;
         }
-        const route = req.url?.startsWith(prefix) ? req.url.slice(prefix.length) : null;
+        if (route === "settings" || route === "settings?refresh=1") {
+            res.setHeader("Content-Type", "application/json");
+            try {
+                res.end(JSON.stringify(await readSettings(config, route.endsWith("?refresh=1"), {load, version, dbPath})));
+            } catch (error) {
+                console.error("Settings read failed:", error);
+                res.writeHead(502).end(JSON.stringify({error: error.publicMessage ?? "Could not load local settings or connection checks.", retryAt: error.retryAt ?? null}));
+            }
+            return;
+        }
         const centerRoute = route?.match(/^cost-centers(?:\/([a-zA-Z0-9-]+))?(\?refresh=1)?$/);
         const budgetRoute = route?.match(/^budgets(?:\/([a-zA-Z0-9-]+))?(\?refresh=1)?$/);
         const userRoute = route?.match(/^users\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,99})(\?refresh=1)?$/);

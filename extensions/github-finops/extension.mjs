@@ -1,5 +1,6 @@
-import { joinSession, createCanvas } from "@github/copilot-sdk/extension";
-import { startServer } from "./server.mjs";
+import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
+import { startServer, readSettings } from "./server.mjs";
+import {validateInput} from "./budgets.mjs";
 
 const servers = new Map();
 
@@ -18,6 +19,17 @@ await joinSession({
                 required: ["enterprise"],
                 additionalProperties: false,
             },
+            actions: [{
+                name: "connection_status",
+                description: "Read local Settings and saved access checks; explicitly set refresh to probe read-only GitHub capabilities.",
+                inputSchema: {type: "object", properties: {refresh: {type: "boolean"}}, additionalProperties: false},
+                handler: async ctx => {
+                    const entry = servers.get(ctx.instanceId);
+                    if (!entry) throw new CanvasError("canvas_not_open", "Open GitHub FinOps with the intended enterprise first.");
+                    await entry.pending;
+                    return readSettings(validateInput(JSON.parse(entry.configKey)), ctx.input?.refresh === true);
+                },
+            }],
             open: async (ctx) => {
                 const configKey = JSON.stringify(ctx.input);
                 let entry = servers.get(ctx.instanceId);

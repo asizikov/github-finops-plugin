@@ -188,3 +188,36 @@ per-team fanout or roster crawl runs automatically. Returned center UUIDs link
 to configuration, without treating team assignment as effective-budget evidence.
 
 Reference: [Enterprise team memberships](https://docs.github.com/en/enterprise-cloud@latest/rest/enterprise-teams/enterprise-team-members#list-enterprise-teams-for-a-user).
+
+## Settings and versions
+
+The black header and navigation stay stationary; only page content scrolls.
+Settings is always the last navigation entry. It displays the actual resolved
+SQLite file location; Open reveals that file on macOS/Windows or opens its parent
+folder on Linux. Only this backend-selected cache location can be opened.
+Unsupported systems and file-manager errors are reported explicitly.
+
+`package.json` is the authoritative Semantic Versioning source, starting at
+`0.1.0`. Use `npm version patch --no-git-tag-version` (or `minor`/`major` as
+appropriate) to update package/lock versions; the version hook synchronizes
+`plugin.json`. Builds reject mismatched manifest versions. Settings reads the
+version at runtime, plus the development checkout's short Git revision and
+working-tree state when available. Distributed copies without their own Git
+repository show no development revision; builds do not embed a precommit hash.
+
+Opening Settings does not query GitHub. Check connection explicitly checks
+authentication, configured enterprise identity, billing budgets, cost centers,
+current-month AI usage and the authenticated account's enterprise-team endpoint.
+It is a capability probe, not a bulk roster or full data refresh. Saved checks
+are isolated by host, enterprise and credential context, with timestamps and the
+shared rate-limit cooldown. Failed checks remain distinct from successful empty
+responses, preserve last verified identity/access timestamps, and never imply
+zero spending or absent membership. The configured slug is not a verified
+enterprise connection; each endpoint can have different permissions.
+
+Reported OAuth scopes are sanitized metadata only, not tokens. Scope presence
+does not prove role/SSO/policy access, and absent scope headers remain unknown.
+Environment-token overrides are identified locally and cannot be elevated in
+place: replace them at their source or deliberately use authorized stored gh
+credentials. Settings never changes authentication. These checks cover the
+read endpoints, not all users' visibility or write capabilities.

@@ -1,13 +1,14 @@
 import React, {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BaseStyles, ThemeProvider, Button, Label, Spinner, Flash} from '@primer/react';
-import {GraphIcon, OrganizationIcon, CreditCardIcon, PeopleIcon} from '@primer/octicons-react';
+import {GraphIcon, OrganizationIcon, CreditCardIcon, PeopleIcon, GearIcon} from '@primer/octicons-react';
 import '@primer/primitives/dist/css/functional/themes/light.css';
 import '@primer/primitives/dist/css/functional/themes/dark.css';
 import './style.css';
 import CostCenters from './CostCenters';
 import Budgets from './Budgets';
 import Users, {type UserLookup} from './Users';
+import Settings from './Settings';
 import type {ListState} from './pagination.mjs';
 
 type Budget = {
@@ -134,7 +135,7 @@ function OverviewPage() {
     </main>;
 }
 
-type Page = 'Overview' | 'Cost Centers' | 'Budgets' | 'Users';
+type Page = 'Overview' | 'Cost Centers' | 'Budgets' | 'Users' | 'Settings';
 type Route = {page: Page; id?: string};
 
 function App() {
@@ -156,15 +157,18 @@ function App() {
     return () => observer.disconnect();
   }, []);
   return <ThemeProvider colorMode={dark ? 'night' : 'day'}><BaseStyles className="canvas-shell">
-    <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true">F</span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div><Label>Read only</Label></header>
+    <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true">F</span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div><Label className="header-readonly">Read only</Label></header>
     <div className="app-layout"><aside className="sidebar"><nav aria-label="Main navigation">{([
       {name: 'Overview', icon: GraphIcon}, {name: 'Cost Centers', icon: OrganizationIcon},
       {name: 'Budgets', icon: CreditCardIcon}, {name: 'Users', icon: PeopleIcon},
+      {name: 'Settings', icon: GearIcon},
     ] satisfies {name: Page; icon: typeof GraphIcon}[]).map(item => <Button key={item.name} block variant="invisible" alignContent="start" leadingVisual={item.icon} aria-current={page === item.name ? 'page' : undefined} onClick={() => setHistory([{page:item.name}])}>{item.name}</Button>)}</nav></aside>
-      {page === 'Overview' ? <OverviewPage /> : page === 'Cost Centers' ?
+      <div className="page-scroll" tabIndex={0} role="region" aria-label={`${page} page content`} key={`${page}-${route.id ?? ''}`}>
+      {page === 'Overview' ? <OverviewPage /> : page === 'Settings' ? <Settings /> : page === 'Cost Centers' ?
         <CostCenters selected={route.id} list={centerList} setList={setCenterList} select={id => open({page:'Cost Centers',id})} back={back} backLabel={backLabel} openBudget={id => open({page:'Budgets',...(id ? {id} : {})})} /> :
         page === 'Budgets' ? <Budgets selected={route.id} list={budgetList} setList={setBudgetList} select={id => open({page:'Budgets',id})} back={back} backLabel={backLabel} canGoBack={history.length > 1} openCenter={id => open({page:'Cost Centers',id})} /> :
         <Users lookup={userLookup} setLookup={setUserLookup} openCenter={id => open({page:'Cost Centers',id})} openBudget={id => open({page:'Budgets',id})} />}
+      </div>
     </div>
   </BaseStyles></ThemeProvider>;
 }
