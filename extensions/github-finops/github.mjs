@@ -52,12 +52,23 @@ export function authMetadata(headers) {
     return {scopes};
 }
 
-export async function ghRead(path, host, onLimit, inspect) {
+export function readRequest(path, identity) {
+    if (path !== "/graphql") return {method: "GET", args: [path]};
+    if (typeof identity?.enterprise !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$/.test(identity.enterprise)) {
+        throw new Error("Provide a valid enterprise for the fixed identity query.");
+    }
+    return {method: "POST", args: ["graphql", "--raw-field",
+        "query=query($slug: String!) { enterprise(slug: $slug) { name slug } }",
+        "--raw-field", `slug=${identity.enterprise}`]};
+}
+
+export async function ghRead(path, host, onLimit, inspect, identity) {
+    const request = readRequest(path, identity);
     let stdout;
     try {
         ({ stdout } = await exec("gh", [
-            "api", "--method", "GET", "--hostname", host, "--include",
-            "-H", "X-GitHub-Api-Version: 2026-03-10", path,
+            "api", "--method", request.method, "--hostname", host, "--include",
+            "-H", "X-GitHub-Api-Version: 2026-03-10", ...request.args,
         ], { timeout: 30000, maxBuffer: 8 * 1024 * 1024 }));
     } catch (error) {
         let retryAt = null;
@@ -66,6 +77,13 @@ export async function ghRead(path, host, onLimit, inspect) {
             const response = parseResponse(error.stdout);
             retryAt = rateLimitDeadline(response);
             status = response.status;
+            if (path === "/graphql" && status === 200) {
+                const body = JSON.parse(response.body);
+                if (body.errors?.some(item => item.type === "INSUFFICIENT_SCOPES")) {
+                    throw Object.assign(new GitHubReadError("Enterprise identity requires an additional OAuth scope.", retryAt, status),
+                        {diagnosticState: "missing_scope"});
+                }
+            }
         }
         throw new GitHubReadError(retryAt
             ? "GitHub requests are rate-limited. Cached data is retained until refresh is available."

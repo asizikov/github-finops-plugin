@@ -5,7 +5,7 @@ import {tmpdir} from "node:os";
 import {join, resolve} from "node:path";
 import {execFileSync} from "node:child_process";
 import {versionInfo, authSource, revealDatabase, loadConnection} from "./settings.mjs";
-import {authMetadata, GitHubReadError} from "./github.mjs";
+import {authMetadata, GitHubReadError, readRequest} from "./github.mjs";
 import {OverviewCache, SnapshotStore, databasePath} from "./cache.mjs";
 import {startServer} from "./server.mjs";
 
@@ -18,11 +18,14 @@ function temporary(t) {
 }
 function reader(scopes = ["repo","read:enterprise"]) {
     const calls = [];
-    return {calls,read:async (path,host,onLimit,inspect) => {
+    return {calls,read:async (path,host,onLimit,inspect,identity) => {
         calls.push(path);
         assert.equal(host,config.host);
         if (path === "/user") {inspect?.({scopes});return {login:"sample-user",id:12};}
-        if (path.startsWith("/graphql?query=")) return {data:{enterprise:{name:"Example enterprise",slug:"example-enterprise"}}};
+        if (path === "/graphql") {
+            assert.deepEqual(identity,{enterprise:"example-enterprise"});
+            return {data:{enterprise:{name:"Example enterprise",slug:"example-enterprise"}}};
+        }
         if (path.includes("/budgets?")) return {budgets:[],has_next_page:false};
         if (path.endsWith("/cost-centers")) return {costCenters:[]};
         if (path.includes("/ai_credit/usage?")) return {usageItems:[]};
@@ -30,7 +33,7 @@ function reader(scopes = ["repo","read:enterprise"]) {
         throw new Error("Unexpected request");
     }};
 }
-const diagnosticReader = source => (path,host,inspect) => source.read(path,host,undefined,inspect);
+const diagnosticReader = source => (path,host,inspect,identity) => source.read(path,host,undefined,inspect,identity);
 
 test("runtime version comes from the manifest and reports only the checkout's actual revision/status", async t => {
     const directory = temporary(t);
@@ -97,6 +100,12 @@ test("auth metadata excludes tokens and host-specific environment precedence mat
     assert.deepEqual(authMetadata(new Map()),{scopes:null});
     assert.deepEqual(authMetadata(new Map([["x-oauth-scopes",""]])),{scopes:[]});
     assert.throws(() => authMetadata(new Map([["x-oauth-scopes","Bearer secret-token-123"]])),/invalid scope metadata/);
+    const identity = readRequest("/graphql",{enterprise:"example-enterprise",query:"mutation { forbidden }"});
+    assert.equal(identity.method,"POST");
+    assert.deepEqual(identity.args,["graphql","--raw-field",
+        "query=query($slug: String!) { enterprise(slug: $slug) { name slug } }","--raw-field","slug=example-enterprise"]);
+    assert.throws(() => readRequest("/graphql",{enterprise:'"; mutation { forbidden }'}),/valid enterprise/);
+    assert.deepEqual(readRequest("/user"),{method:"GET",args:["/user"]});
 });
 
 test("connection checks validate actual endpoint shapes and distinguish scopes from endpoint capabilities", async () => {
@@ -115,9 +124,9 @@ test("connection checks validate actual endpoint shapes and distinguish scopes f
     const statuses = [401,403,404,503];
     for (const status of statuses) {
         const source = reader(["admin:enterprise"]);
-        const checked = await loadConnection(config,async (path,host,inspect) => {
+        const checked = await loadConnection(config,async (path,host,inspect,identity) => {
             if (path.includes("/teams?")) throw new GitHubReadError("Do not expose raw body",null,status);
-            return source.read(path,host,undefined,inspect);
+            return source.read(path,host,undefined,inspect,identity);
         },now);
         const team = checked.checks.find(check => check.key === "enterprise_teams");
         assert.equal(checked.readEnterpriseScope,"present");
@@ -132,7 +141,7 @@ test("connection checks validate actual endpoint shapes and distinguish scopes f
     assert.ok(malformed.checks.every(check => check.state !== "accessible"));
     const sourceWithQueryError = reader();
     const queryError = await loadConnection(config,async (path,host,inspect) => {
-        if (path.startsWith("/graphql?")) return {data:{enterprise:null},errors:[{type:"INSUFFICIENT_SCOPES",message:"Raw hidden details"}]};
+        if (path === "/graphql") return {data:{enterprise:null},errors:[{type:"INSUFFICIENT_SCOPES",message:"Raw hidden details"}]};
         return sourceWithQueryError.read(path,host,undefined,inspect);
     },now);
     assert.equal(queryError.checks.find(check => check.key === "enterprise").state,"missing_scope");

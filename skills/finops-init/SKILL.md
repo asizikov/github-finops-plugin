@@ -23,7 +23,8 @@ flow.
   auth output. Inspect environment variable presence only. Do not put actual
   enterprise identifiers, usernames, local config, snapshots or credentials in
   tracked files, public reports or screenshots.
-- Only GET API calls. Do not change budgets, memberships, roles, enterprise
+- Only REST GET calls and the fixed read-only enterprise-identity GraphQL
+  query. GraphQL queries use POST; never send a mutation. Do not change budgets, memberships, roles, enterprise
   settings or app installations. Do not crawl member/team rosters.
 - Read-only checks can still consume rate limits. Respect Retry-After/reset
   cooldowns, never retry in a loop, and stop until the deadline when limited.
@@ -96,14 +97,12 @@ cache and cooldown as the canvas:
    stale.
 3. When the user requests connection verification, invoke `connection_status`
    with `{refresh:true}` once, or use Settings > Check connection. This performs
-   explicit GET probes for authentication, enterprise display identity, billing
+   explicit read-only probes for authentication, enterprise display identity, billing
    budgets, cost centers, current-month AI usage and the authenticated account's
    enterprise-team membership endpoint. It does not fetch a bulk roster or
    assert access to every user's data.
 4. If canvas diagnostics are unavailable, explain that limitation. Equivalent
    targeted `gh api --hostname HOST --method GET` checks can use `/user`,
-   a read-only GraphQL `enterprise(slug: "ENTERPRISE") { name slug }` query
-   (HTTP GET to `/graphql?query=...`, safely URL-encoded),
    `/enterprises/ENTERPRISE/settings/billing/budgets?per_page=1&page=1`,
    `/enterprises/ENTERPRISE/settings/billing/cost-centers`,
    `/enterprises/ENTERPRISE/settings/billing/ai_credit/usage?year=YEAR&month=MONTH`
@@ -112,6 +111,11 @@ cache and cooldown as the canvas:
    verified current login. Use API version `2026-03-10`. Inspect only status,
    sanitized scope metadata and required response shapes; do not print full
    customer billing data. Respect any returned cooldown.
+   For display identity, use `gh api graphql --hostname HOST --method POST`
+   with `--raw-field 'query=query($slug: String!) { enterprise(slug: $slug) {
+   name slug } }'` and `--raw-field 'slug=ENTERPRISE'`, passing arguments safely.
+   This is a fixed read-only query, not a mutation. GET `/graphql` returns
+   schema introspection rather than executing this identity query.
 
 Interpret results separately:
 

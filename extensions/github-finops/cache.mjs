@@ -196,11 +196,11 @@ export class OverviewCache {
     }
 
     async refresh(key, config, context, cached, now, resource, id, namespace) {
-        const read = async (path, host, inspect) => {
+        const read = async (path, host, inspect, identity) => {
             const blocked = this.store.deadline(context, this.clock());
             if (blocked) throw new GitHubReadError("GitHub rate-limit cooldown is active.", blocked);
             try {
-                return await this.read(path, host, retryAt => this.store.limit(context, retryAt), inspect);
+                return await this.read(path, host, retryAt => this.store.limit(context, retryAt), inspect, identity);
             } catch (error) {
                 if (error.retryAt) this.store.limit(context, error.retryAt);
                 throw error;

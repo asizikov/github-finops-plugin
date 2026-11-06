@@ -74,9 +74,9 @@ export async function loadConnection({enterprise, host}, read, now = new Date())
     let scopes = null;
     let login = null;
     let name = null;
-    async function probe(key, path, inspect, validate = () => true) {
+    async function probe(key, path, inspect, validate = () => true, identity) {
         try {
-            const data = await read(path, host, inspect);
+            const data = await read(path, host, inspect, identity);
             if (data?.errors?.some(error => error.type === "INSUFFICIENT_SCOPES")) {
                 throw Object.assign(new Error("Missing query scope."), {diagnosticState: "missing_scope", status: 200});
             }
@@ -95,10 +95,9 @@ export async function loadConnection({enterprise, host}, read, now = new Date())
     login = profile?.login ?? null;
     const base = `/enterprises/${encodeURIComponent(enterprise)}`;
     const billing = `${base}/settings/billing`;
-    const query = `query { enterprise(slug: ${JSON.stringify(enterprise)}) { name slug } }`;
-    const target = await probe("enterprise", `/graphql?query=${encodeURIComponent(query)}`, undefined, response =>
+    const target = await probe("enterprise", "/graphql", undefined, response =>
         !response?.errors?.length && typeof response?.data?.enterprise?.name === "string" &&
-        response.data.enterprise.slug?.toLowerCase() === enterprise.toLowerCase());
+        response.data.enterprise.slug?.toLowerCase() === enterprise.toLowerCase(), {enterprise});
     name = target?.data.enterprise.name ?? null;
     await probe("budgets", `${billing}/budgets?per_page=1&page=1`, undefined, data => Array.isArray(data?.budgets));
     await probe("cost_centers", `${billing}/cost-centers`, undefined, data => Array.isArray(data?.costCenters));

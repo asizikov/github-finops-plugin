@@ -2,7 +2,9 @@
 
 The canvas requires a current Copilot runtime with canvas extensions and GitHub
 CLI (`gh`) on PATH, authenticated to the target host with enterprise billing read
-access. It only makes GET requests; tokens are never sent to the iframe.
+access. REST reads use GET; enterprise display-name lookup uses one fixed
+read-only GraphQL query via POST (never a mutation). Tokens are never sent to
+the iframe.
 
 Load this directory as a local plugin with `copilot --plugin-dir .`. Open the
 `github-finops` canvas with input containing an `enterprise` slug and optional
