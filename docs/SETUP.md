@@ -239,9 +239,9 @@ repository show no development revision; builds do not embed a precommit hash.
 
 The canvas checks the public repository's
 [`main/VERSION`](https://raw.githubusercontent.com/asizikov/github-finops-plugin/main/VERSION)
-on open and every 24 hours while open. Checks are backend-only, unauthenticated,
+on open and every 15 minutes while open. Checks are backend-only, unauthenticated,
 limited to 5 seconds and 200 bytes, and never send enterprise data or credentials.
-Successful and failed attempts are cached for 24 hours in user-local
+Successful and failed attempts are cached for 15 minutes in user-local
 `$COPILOT_HOME/extensions/github-finops/artifacts/updates.json` (default
 `~/.copilot`), separate from billing/authentication caches. Settings shows the
 last successful public check or a nonblocking error; offline/invalid responses

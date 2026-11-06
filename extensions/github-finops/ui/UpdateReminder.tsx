@@ -25,7 +25,7 @@ export function usePluginUpdates() {
       }
     }
     void check();
-    const timer = setInterval(() => void check(), 24 * 60 * 60 * 1000);
+    const timer = setInterval(() => void check(), 15 * 60 * 1000);
     return () => {controller.abort();clearInterval(timer);};
   }, []);
   return {status, setStatus, error};

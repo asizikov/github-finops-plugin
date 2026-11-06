@@ -3,7 +3,7 @@ import {homedir} from "node:os";
 import {dirname, join} from "node:path";
 import {randomUUID} from "node:crypto";
 
-export const CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+export const CHECK_INTERVAL = 15 * 60 * 1000;
 export const VERSION_URL = "https://raw.githubusercontent.com/asizikov/github-finops-plugin/main/VERSION";
 export const UPDATE_URL = "https://github.com/asizikov/github-finops-plugin/blob/main/docs/SETUP.md#updating-the-plugin";
 const rootVersion = new URL("../../VERSION", import.meta.url);
@@ -121,7 +121,7 @@ export function createUpdateChecker({
                     state.error = null;
                 } catch (error) {
                     log(error.message);
-                    state.error = "Could not check for plugin updates. The next check is in 24 hours.";
+                    state.error = "Could not check for plugin updates. The next check is in 15 minutes.";
                 }
                 try {await save();}
                 catch (error) {log(error.message);state.error = "Could not save plugin update status.";}

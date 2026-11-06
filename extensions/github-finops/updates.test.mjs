@@ -67,7 +67,7 @@ test("equal and older versions never produce an offer; installed version stays l
     }
 });
 
-test("coalesces requests, persists daily cadence and exact-version dismissal across restarts", async t => {
+test("coalesces requests, persists 15-minute cadence and exact-version dismissal across restarts", async t => {
     let time = 1000, calls = 0, offer = "0.3.0";
     const options = await fixture(t, {now: () => time, latest: async () => {calls++;return offer;}});
     const checker = createUpdateChecker(options);
@@ -84,7 +84,7 @@ test("coalesces requests, persists daily cadence and exact-version dismissal acr
     const restarted = createUpdateChecker(options);
     assert.equal((await restarted.check()).available, false);
     assert.equal(calls, 1);
-    time += CHECK_INTERVAL - 1;
+    time += 15 * 60 * 1000 - 1;
     await restarted.check();
     assert.equal(calls, 1);
     time += 1;
@@ -97,7 +97,22 @@ test("coalesces requests, persists daily cadence and exact-version dismissal acr
     assert.equal(JSON.parse(await readFile(options.file)).dismissed, "0.3.0");
 });
 
-test("offline, malformed and timeout errors stay unknown, retain last success, and retry only next day", async t => {
+test("previously persisted attempts honor the 15-minute boundary rather than a daily cooldown", async t => {
+    const time = 2 * 60 * 60 * 1000;
+    for (const [age, expectedCalls] of [[15 * 60 * 1000 - 1, 0], [15 * 60 * 1000, 1], [60 * 60 * 1000, 1]]) {
+        let calls = 0;
+        const options = await fixture(t, {now: () => time, latest: async () => {calls++;return "0.4.0";}});
+        await writeFile(options.file, JSON.stringify({
+            attemptedAt: time - age, checkedAt: time - age, latest: "0.3.0", dismissed: "0.3.0", error: null,
+        }));
+        const result = await createUpdateChecker(options).check();
+        assert.equal(calls, expectedCalls);
+        assert.equal(result.latest, expectedCalls ? "0.4.0" : "0.3.0");
+        assert.equal(result.available, Boolean(expectedCalls));
+    }
+});
+
+test("offline, malformed and timeout errors stay unknown, retain last success, and retry after 15 minutes", async t => {
     for (const failure of [async () => {throw new Error("offline");}, async () => "bad",
         () => publishedVersion({timeout: 10, request: (_, {signal}) => new Promise((resolve, reject) =>
             signal.addEventListener("abort", () => reject(new Error("timeout")), {once: true}))})]) {
@@ -113,6 +128,7 @@ test("offline, malformed and timeout errors stay unknown, retain last success, a
         assert.equal(result.latest, "0.3.0");
         assert.equal(result.checkedAt, success.checkedAt);
         assert.match(result.error, /Could not check/);
+        assert.match(result.error, /15 minutes/);
         assert.equal(logs.length, 1);
         assert.equal((await createUpdateChecker(options).check()).available, false);
         assert.equal(calls, 2);
