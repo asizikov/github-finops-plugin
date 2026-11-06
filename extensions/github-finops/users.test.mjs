@@ -9,6 +9,7 @@ import {normalizeUsername, resolveUserBudgets, userBudgetEnforcement} from "./ui
 import {normalizeBudgetRecord} from "./budget-list.mjs";
 import {SnapshotStore, OverviewCache} from "./cache.mjs";
 import {GitHubReadError} from "./github.mjs";
+import {loadEnterpriseTeams, loadTeamCostCenters} from "./enterprise-teams.mjs";
 
 const config = {enterprise:"example-enterprise",host:"github.com"};
 const login = "sample-user";
@@ -24,13 +25,14 @@ const defaultBudget = raw("default-budget","multi_user_customer","example-enterp
 const page = (budgets = [userBudget,defaultBudget], extra = {}) => ({
     user:login,budgets,has_next_page:false,effective_budget:{id:"user-budget",budget_amount:20,consumed_amount:3},...extra,
 });
-function reader({members = membership, pages = [page()], detail = userBudget} = {}) {
+function reader({members = membership, pages = [page()], detail = userBudget, teams = []} = {}) {
     const calls = [];
     return {calls,read:async path => {
         calls.push(path);
         if (path.startsWith("/users/")) return profile;
         if (path.includes("/memberships?")) return members;
         if (path.includes("/budgets?")) return pages[Number(new URL(`https://example.test${path}`).searchParams.get("page")) - 1];
+        if (path.includes("/teams?")) return teams;
         return detail;
     }};
 }
@@ -70,7 +72,7 @@ test("resolves identity, authoritative membership IDs and every user-budget page
     assert.equal(result.filterVerified,true);
     assert.equal(result.budgets.length,2);
     assert.deepEqual(result.period,{year:2025,month:1});
-    assert.equal(calls.length,4);
+    assert.equal(calls.length,5);
     assert.match(calls[3],/user=sample-user&per_page=100&page=2$/);
 });
 
@@ -200,9 +202,9 @@ test("cached normalized user searches and restart persistence make zero GitHub c
     const {cache,store,source,path} = cachedSetup(t);
     const result = await cache.get(config,{resource:"user",id:" @Sample-User "});
     assert.equal(result.cache.source,"live");
-    assert.equal(source.calls.length,3);
+    assert.equal(source.calls.length,4);
     assert.equal((await cache.get(config,{resource:"user",id:"SAMPLE-USER"})).cache.source,"cached");
-    assert.equal(source.calls.length,3);
+    assert.equal(source.calls.length,4);
     assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM relationship_budgets").get().n,0);
     const script = `
       import {SnapshotStore,OverviewCache} from ${JSON.stringify(new URL("./cache.mjs",import.meta.url).href)};
@@ -215,6 +217,7 @@ test("cached normalized user searches and restart persistence make zero GitHub c
     const restart = JSON.parse(execFileSync(process.execPath,["--input-type=module","-e",script],{encoding:"utf8"}));
     assert.equal(restart.cache.source,"cached");
     assert.equal(restart.data.login,login);
+    assert.deepEqual(restart.data.enterpriseTeams.items,[]);
 });
 
 test("user cache isolates login, host, enterprise, account and billing month", async t => {
@@ -230,7 +233,179 @@ test("user cache isolates login, host, enterprise, account and billing month", a
     assert.equal((await cache.get(config,{...options,id:"renamed-alias"})).cache.source,"live");
     state.now = new Date("2025-02-01T00:00:00Z");
     assert.equal((await cache.get(config,options)).data.period.month,2);
-    assert.equal(state.attempts,18);
+    assert.equal(state.attempts,24);
+});
+
+const team = (id = 1) => ({id, name:`Team ${id}`, slug:`ent:team-${id}`,
+    html_url:`https://github.com/enterprises/example-enterprise/teams/ent:team-${id}`});
+
+test("enterprise teams paginate at 100 with exact identities, including the full-page boundary and empty results", async () => {
+    const calls = [];
+    const first = Array.from({length:100},(_,index) => team(index + 1));
+    const result = await loadEnterpriseTeams(config,async (path,host) => {
+        calls.push(path);
+        assert.equal(host,config.host);
+        return path.endsWith("page=1") ? first : [team(101)];
+    }," @Sample-User ");
+    assert.equal(result.length,101);
+    assert.deepEqual(result[0],{id:1,name:"Team 1",slug:"ent:team-1",htmlUrl:team().html_url});
+    assert.match(calls[0],/\/members\/sample-user\/teams\?per_page=100&page=1$/);
+    assert.equal(calls.length,2);
+    let reads = 0;
+    assert.equal((await loadEnterpriseTeams(config,async () => ++reads === 1 ? first : [],login)).length,100);
+    assert.equal(reads,2);
+    assert.deepEqual(await loadEnterpriseTeams(config,async () => [],login),[]);
+});
+
+test("invalid or repeated enterprise team pages and unsafe links fail instead of appearing complete", async () => {
+    const repeated = Array.from({length:100},(_,index) => team(index + 1));
+    await assert.rejects(loadEnterpriseTeams(config,async () => repeated,login),/repeated enterprise teams/);
+    for (const invalid of [{teams:[]},[null],[team(),team()], [{...team(),id:0}], [{...team(),slug:"../team"}],
+        [{...team(),html_url:"https://other.example/team"}], [{...team(),html_url:"javascript:alert(1)"}]]) {
+        await assert.rejects(loadEnterpriseTeams(config,async () => invalid,login),/GitHub|Invalid enterprise team/);
+    }
+});
+
+test("unavailable enterprise teams remain a partial error without hiding budgets or direct memberships", async t => {
+    t.mock.method(console,"error",() => {});
+    for (const [status,message] of [[401,/access denied/],[403,/read:enterprise/],[404,/unavailable.*404/],[503,/Service unavailable/]]) {
+        const source = reader();
+        const result = await loadUser(config,async path => {
+            if (path.includes("/teams?")) throw new GitHubReadError("Service unavailable",null,status);
+            return source.read(path);
+        },login);
+        assert.equal(result.enterpriseTeams.items,null);
+        assert.equal(result.enterpriseTeams.status,status);
+        assert.match(result.enterpriseTeams.error,message);
+        assert.equal(result.budgets.length,2);
+        assert.equal(result.memberships.length,1);
+        assert.equal(resolveUserBudgets(result).effective.id,"user-budget");
+    }
+    await assert.rejects(loadUser(config,async path => {
+        if (path.includes("/teams?")) throw Object.assign(new Error("Broken SQLite"),{code:"local_cache_error"});
+        return reader().read(path);
+    },login),/Broken SQLite/);
+});
+
+test("failed and rate-limited team refreshes persist last-good teams without replacing their read timestamp", async t => {
+    t.mock.method(console,"error",() => {});
+    const {cache,store,state,path} = cachedSetup(t);
+    const source = reader({teams:[team()]});
+    let failure = null;
+    let profileId = profile.id;
+    cache.read = async path => {
+        state.attempts++;
+        if (failure && path.includes("/teams?")) throw failure;
+        if (path.startsWith("/users/")) return {...profile,id:profileId};
+        return source.read(path);
+    };
+    const options = {resource:"user",id:login};
+    const first = await cache.get(config,options);
+    const count = state.attempts;
+    const warm = await cache.get(config,options);
+    assert.deepEqual(warm.data.enterpriseTeams,first.data.enterpriseTeams);
+    assert.equal(state.attempts,count);
+    state.now = new Date("2025-01-03T00:00:00Z");
+    failure = new GitHubReadError("Denied",null,403);
+    const failed = await cache.get(config,{...options,refresh:true});
+    assert.deepEqual(failed.data.enterpriseTeams.items,first.data.enterpriseTeams.items);
+    assert.equal(failed.data.enterpriseTeams.fetchedAt,first.data.enterpriseTeams.fetchedAt);
+    assert.match(failed.data.enterpriseTeams.error,/access denied/);
+    assert.equal(failed.data.budgets.length,2);
+    const restartedStore = new SnapshotStore(path);
+    t.after(() => restartedStore.close());
+    const restarted = new OverviewCache(restartedStore,{identity:async () => "one",clock:() => state.now,
+        read:async () => {assert.fail("No GitHub calls after restart");}});
+    assert.deepEqual((await restarted.get(config,options)).data.enterpriseTeams,failed.data.enterpriseTeams);
+    failure = new GitHubReadError("Limited","2025-01-03T00:02:00Z",429);
+    const limited = await cache.get(config,{...options,refresh:true});
+    assert.deepEqual(limited.data.enterpriseTeams.items,first.data.enterpriseTeams.items);
+    assert.equal(limited.cache.retryAt,failure.retryAt);
+    assert.equal((await restarted.get(config,options)).cache.retryAt,failure.retryAt);
+    assert.match(limited.data.enterpriseTeams.error,/rate-limited/);
+    const attempts = state.attempts;
+    await cache.get(config,{...options,refresh:true});
+    assert.equal(state.attempts,attempts);
+    state.now = new Date("2025-01-03T00:03:00Z");
+    profileId = 99;
+    failure = new GitHubReadError("Denied",null,403);
+    const changedIdentity = await cache.get(config,{...options,refresh:true});
+    assert.equal(changedIdentity.data.id,99);
+    assert.equal(changedIdentity.data.enterpriseTeams.items,null);
+    assert.equal(changedIdentity.data.enterpriseTeams.fetchedAt,null);
+    assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM relationship_centers").get().n,0);
+});
+
+test("older user snapshots do not fetch teams until explicit refresh, and negative team results are cached", async t => {
+    t.mock.method(console,"error",() => {});
+    const {cache,store,state} = cachedSetup(t);
+    const options = {resource:"user",id:login};
+    await cache.get(config,options);
+    const row = store.db.prepare("SELECT cache_key, payload FROM snapshots WHERE json_extract(payload,'$.kind') = 'user'").get();
+    const snapshot = JSON.parse(row.payload);
+    delete snapshot.data.enterpriseTeams;
+    store.put(row.cache_key,snapshot);
+    const count = state.attempts;
+    assert.equal((await cache.get(config,options)).data.enterpriseTeams,undefined);
+    assert.equal(state.attempts,count);
+    const source = reader();
+    cache.read = async path => {
+        state.attempts++;
+        if (path.includes("/teams?")) throw new GitHubReadError("Not found",null,404);
+        return source.read(path);
+    };
+    const refreshed = await cache.get(config,{...options,refresh:true});
+    assert.equal(refreshed.data.enterpriseTeams.items,null);
+    assert.equal(refreshed.data.enterpriseTeams.status,404);
+    const attempts = state.attempts;
+    assert.equal((await cache.get(config,options)).data.enterpriseTeams.status,404);
+    assert.equal(state.attempts,attempts);
+});
+
+test("on-demand team cost center lookup verifies echoed slug, pagination, persistent isolation and retained errors", async t => {
+    t.mock.method(console,"error",() => {});
+    const {cache,state,source,path} = cachedSetup(t);
+    const calls = [];
+    cache.read = async request => {
+        calls.push(request);
+        if (!request.includes("resource_type=team")) return source.read(request);
+        if (state.failure) throw state.failure;
+        const slug = new URL(`https://example.test${request}`).searchParams.get("name");
+        return {resource:{type:"team",identifier:{slug}},memberships:[
+            {cost_center:{id:request.endsWith("page=1")?"center-one":"center-two",name:"Engineering"}},
+        ],has_next_page:request.endsWith("page=1")};
+    };
+    const options = {resource:"team-cost-centers",id:"ent:team-1"};
+    await cache.get(config,{resource:"user",id:login});
+    assert.equal(calls.filter(path => path.includes("resource_type=team")).length,0);
+    const result = await cache.get(config,options);
+    assert.equal(result.data.memberships.length,2);
+    assert.match(calls.at(-1),/resource_type=team&name=ent%3Ateam-1&per_page=100&page=2$/);
+    const count = calls.length;
+    assert.equal((await cache.get(config,options)).cache.source,"cached");
+    assert.equal(calls.length,count);
+    const restartedStore = new SnapshotStore(path);
+    t.after(() => restartedStore.close());
+    const restarted = new OverviewCache(restartedStore,{identity:async () => "one",clock:() => state.now,
+        read:async () => {assert.fail("No reads on restarted team cache");}});
+    assert.deepEqual((await restarted.get(config,options)).data,result.data);
+    assert.equal((await cache.get(config,{...options,id:"ent:team-2"})).data.slug,"ent:team-2");
+    state.account = "two";
+    assert.equal((await cache.get(config,options)).cache.source,"live");
+    state.account = "one";
+    assert.equal((await cache.get({...config,host:"example.test"},options)).cache.source,"live");
+    assert.equal((await cache.get({...config,enterprise:"another-enterprise"},options)).cache.source,"live");
+    state.failure = new GitHubReadError("Denied",null,403);
+    const failed = await cache.get(config,{...options,refresh:true});
+    assert.deepEqual(failed.data,result.data);
+    assert.match(failed.cache.error,/Access denied/);
+    await assert.rejects(loadTeamCostCenters(config,async () => ({
+        resource:{type:"team",identifier:{slug:"ent:another-team"}},memberships:[],
+    }),"ent:team-1"),/mismatched team memberships/);
+    await assert.rejects(loadTeamCostCenters(config,async () => [],"../team"),/Invalid enterprise team slug/);
+    assert.deepEqual(await loadTeamCostCenters(config,async () => ({
+        resource:{type:"team",identifier:{slug:"ent:team-1"}},memberships:[],
+    }),"ent:team-1"),{slug:"ent:team-1",memberships:[]});
 });
 
 test("failed or limited refresh keeps last-good user state, persists errors and avoids retry storms", async t => {

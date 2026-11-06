@@ -44,6 +44,13 @@ test("serves bundled UI and normalized reads only within its protected loopback 
             {refresh:false,resource:"user",id:"sample-user"},
             {refresh:true,resource:"user",id:"sample-user"},
         ]);
+        assert.equal((await fetch(`${url}team-cost-centers/ent%3Aengineering`)).status,200);
+        assert.equal((await fetch(`${url}team-cost-centers/ent:engineering?refresh=1`)).status,200);
+        assert.deepEqual(loads.slice(8),[
+            {refresh:false,resource:"team-cost-centers",id:"ent:engineering"},
+            {refresh:true,resource:"team-cost-centers",id:"ent:engineering"},
+        ]);
+        assert.equal((await fetch(`${url}team-cost-centers/ent%3Aengineering%2Fother`)).status,404);
         assert.equal((await fetch(`${url}users/not/a/user`)).status,404);
         assert.equal((await fetch(new URL("/", url))).status, 404);
         assert.equal((await fetch(`${url}overview`, { method: "POST" })).status, 405);

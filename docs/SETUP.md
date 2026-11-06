@@ -167,3 +167,24 @@ are budget-tracked USD, not net billed spending or an authorization decision.
 Shared spending budgets are monthly metered thresholds for the whole enterprise
 or cost center, not personal allowances. Included credits are separate, and
 alert-only budgets do not stop spending.
+
+### Enterprise teams
+
+User lookups also read every page of the user's enterprise teams (100 per
+request). This endpoint requires the new enterprise teams experience, a classic
+token with `read:enterprise`, and enterprise owner or `enterprise_teams:read`
+permission. It does not support fine-grained PATs or GitHub App tokens. The
+plugin never changes authentication or requests broader scopes automatically.
+403/404 responses remain access-denied/unavailable, not empty membership.
+
+Team failures leave working user billing data visible and preserve the last
+successful team list and its own read timestamp. Older saved user lookups show
+teams as not loaded until an explicit refresh; warm searches never fetch just
+to fill the new field. Team results share the user's isolated persistent cache.
+View cost centers loads only the selected team's resource memberships, cached
+separately by team slug, host, enterprise, and credential context, with explicit
+refresh and shared cooldown. Only one team lookup panel is open at a time; no
+per-team fanout or roster crawl runs automatically. Returned center UUIDs link
+to configuration, without treating team assignment as effective-budget evidence.
+
+Reference: [Enterprise team memberships](https://docs.github.com/en/enterprise-cloud@latest/rest/enterprise-teams/enterprise-team-members#list-enterprise-teams-for-a-user).

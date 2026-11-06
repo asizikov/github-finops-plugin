@@ -1,8 +1,9 @@
 import {normalizeBudget} from "./budgets.mjs";
 import {normalizeBudgetRecord, validateBudgetId} from "./budget-list.mjs";
-import {validateCenterId} from "./cost-centers.mjs";
 import {GitHubReadError} from "./github.mjs";
 import {normalizeUsername} from "./ui/user-format.mjs";
+import {loadResourceMemberships} from "./memberships.mjs";
+import {loadEnterpriseTeams, enterpriseTeamFailure} from "./enterprise-teams.mjs";
 
 async function userRead(read, path, host, stage) {
     try { return await read(path, host); } catch (error) {
@@ -31,28 +32,7 @@ export async function loadUser({enterprise, host}, read, username, now = new Dat
         !["User", "Bot"].includes(profile.type)) throw new Error("GitHub did not return a valid user account.");
     const login = normalizeUsername(profile.login);
     const base = `/enterprises/${encodeURIComponent(enterprise)}/settings/billing`;
-    const memberships = [];
-    const centerIds = new Set();
-    for (let page = 1; ; page++) {
-        const response = await userRead(read,
-            `${base}/cost-centers/memberships?resource_type=user&name=${encodeURIComponent(login)}&per_page=100&page=${page}`, host, "memberships");
-        if (response.resource?.type !== "user" || typeof response.resource.identifier?.login !== "string" ||
-            normalizeUsername(response.resource.identifier.login) !== login || !Array.isArray(response.memberships) ||
-            (response.has_next_page != null && typeof response.has_next_page !== "boolean") ||
-            (response.has_next_page && response.memberships.length === 0)) {
-            throw new Error("GitHub returned incomplete or mismatched user memberships.");
-        }
-        for (const membership of response.memberships) {
-            const center = membership.cost_center;
-            validateCenterId(center?.id);
-            if (typeof center.name !== "string" || !center.name.length || centerIds.has(center.id)) {
-                throw new Error("GitHub returned invalid or repeated user memberships.");
-            }
-            centerIds.add(center.id);
-            memberships.push({id: center.id, name: center.name});
-        }
-        if (!response.has_next_page) break;
-    }
+    const memberships = await loadResourceMemberships({enterprise, host}, read, "user", login);
     const budgets = [];
     const budgetIds = new Set();
     let effective = null;
@@ -92,7 +72,14 @@ export async function loadUser({enterprise, host}, read, username, now = new Dat
         // Detail consumption is not user-filtered, so it must not become this user's consumption.
         budgets.push({...budget, consumed: null, lookupSource: "effective_detail"});
     }
-    return {login: profile.login, id: profile.id, accountType: profile.type,
+    let enterpriseTeams;
+    try {
+        enterpriseTeams = {items: await loadEnterpriseTeams({enterprise, host}, read, login),
+            fetchedAt: now.toISOString(), error: null, status: 200};
+    } catch (error) {
+        enterpriseTeams = enterpriseTeamFailure(error);
+    }
+    return {login: profile.login, id: profile.id, accountType: profile.type, enterpriseTeams,
         period: {year: now.getUTCFullYear(), month: now.getUTCMonth() + 1},
         memberships, budgets, effective, effectiveStatus, filterVerified};
 }

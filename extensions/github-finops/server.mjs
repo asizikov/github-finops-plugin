@@ -35,7 +35,8 @@ export async function startServer(input, load = cachedOverview) {
         const centerRoute = route?.match(/^cost-centers(?:\/([a-zA-Z0-9-]+))?(\?refresh=1)?$/);
         const budgetRoute = route?.match(/^budgets(?:\/([a-zA-Z0-9-]+))?(\?refresh=1)?$/);
         const userRoute = route?.match(/^users\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,99})(\?refresh=1)?$/);
-        if (route === "overview" || route === "overview?refresh=1" || centerRoute || budgetRoute || userRoute) {
+        const teamRoute = route?.match(/^team-cost-centers\/((?:ent(?::|%3[Aa]))?[a-zA-Z0-9][a-zA-Z0-9_-]*)(\?refresh=1)?$/);
+        if (route === "overview" || route === "overview?refresh=1" || centerRoute || budgetRoute || userRoute || teamRoute) {
             res.setHeader("Content-Type", "application/json");
             try {
                 const options = { refresh: route.endsWith("?refresh=1") };
@@ -48,6 +49,7 @@ export async function startServer(input, load = cachedOverview) {
                     if (budgetRoute[1]) options.id = budgetRoute[1];
                 }
                 if (userRoute) {options.resource = "user";options.id = userRoute[1];}
+                if (teamRoute) {options.resource = "team-cost-centers";options.id = decodeURIComponent(teamRoute[1]);}
                 res.end(JSON.stringify(await load(config, options)));
             } catch (error) {
                 console.error("Canvas data read failed:", error);

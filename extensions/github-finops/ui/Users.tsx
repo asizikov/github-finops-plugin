@@ -3,6 +3,7 @@ import {Button, Flash, Label, TextInput} from '@primer/react';
 import {useSnapshot, SnapshotStatus, RefreshButton} from './Snapshot';
 import {budgetAmount, budgetEntity, scopeLabel} from './budget-format.mjs';
 import {normalizeUsername, resolveUserBudgets, userBudgetEnforcement, type UserData} from './user-format.mjs';
+import EnterpriseTeams from './EnterpriseTeams';
 
 export type UserLookup = {query: string; login: string | null};
 type Navigation = {openCenter: (id: string) => void; openBudget: (id: string) => void};
@@ -28,6 +29,8 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
           <div className="notice" key={center.id}><button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button><p className="caption">Membership API / matched by cost center ID</p></div>)}</div> :
           <p className="empty-results">No cost center memberships returned. This does not establish that the user's usage is unallocated.</p>}
       </section>
+      <EnterpriseTeams data={user.enterpriseTeams} cached={state.snapshot?.cache.source === 'cached'}
+        disabled={state.loading || state.blocked} refresh={() => void state.refresh(true)} openCenter={openCenter} />
       <section className="spending-section user-effective" aria-labelledby="effective-budget-title">
         <h3 id="effective-budget-title">Effective per-user AI Credits budget</h3>
         {effective ? <>

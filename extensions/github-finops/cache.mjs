@@ -10,8 +10,9 @@ import { loadBudgets, validateBudgetId } from "./budget-list.mjs";
 import { relationshipSchema, indexRelationships, readRelationships } from "./relationships.mjs";
 import {loadUser} from "./users.mjs";
 import {normalizeUsername} from "./ui/user-format.mjs";
+import {loadTeamCostCenters, validateTeamSlug} from "./enterprise-teams.mjs";
 
-const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail", "user"];
+const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail", "user", "team-cost-centers"];
 
 class LocalCacheError extends Error {
     constructor(cause) {
@@ -157,6 +158,7 @@ export class OverviewCache {
         if (resource === "cost-center-detail") validateCenterId(id);
         if (resource === "budget-detail") validateBudgetId(id);
         if (resource === "user") id = normalizeUsername(id);
+        if (resource === "team-cost-centers") validateTeamSlug(id);
         const config = validateInput(input);
         const context = digest([config.host.toLowerCase(), await this.identity(config.host)]);
         const namespace = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context]);
@@ -206,6 +208,7 @@ export class OverviewCache {
         try {
             live = resource === "overview" ? await this.load(config, read, now)
                 : resource === "user" ? await loadUser(config, read, id, now)
+                : resource === "team-cost-centers" ? await loadTeamCostCenters(config, read, id)
                 : resource === "budgets" || resource === "budget-detail"
                     ? await loadBudgets(config, read, resource === "budget-detail" ? id : undefined)
                     : await loadCostCenters(config, read, resource === "cost-center-detail" ? id : undefined);
@@ -220,6 +223,13 @@ export class OverviewCache {
             return this.present(retained, "cached", this.store.deadline(context, this.clock()), message, namespace);
         }
         if (resource !== "overview") {
+            if (resource === "user" && live.enterpriseTeams.error) {
+                const retainedUser = (this.store.get(key) ?? cached)?.data;
+                const retained = retainedUser?.id === live.id ? retainedUser.enterpriseTeams : null;
+                if (retained?.items != null) {
+                    live.enterpriseTeams = {...live.enterpriseTeams, items: retained.items, fetchedAt: retained.fetchedAt};
+                }
+            }
             const snapshot = { kind: resource, data: live, fetchedAt: new Date().toISOString(),
                 ...(["cost-centers", "budgets"].includes(resource) ? {complete: true} : {}),
             };
