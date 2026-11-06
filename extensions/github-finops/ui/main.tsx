@@ -6,6 +6,8 @@ import '@primer/primitives/dist/css/functional/themes/light.css';
 import '@primer/primitives/dist/css/functional/themes/dark.css';
 import './style.css';
 import CostCenters from './CostCenters';
+import Budgets from './Budgets';
+import type {ListState} from './pagination.mjs';
 
 type Budget = {
   scope: 'enterprise' | 'multi_user_customer';
@@ -131,8 +133,18 @@ function OverviewPage() {
     </main>;
 }
 
+type Page = 'Overview' | 'Cost Centers' | 'Budgets' | 'Users';
+type Route = {page: Page; id?: string};
+
 function App() {
-  const [page, setPage] = useState('Overview');
+  const [history, setHistory] = useState<Route[]>([{page:'Overview'}]);
+  const [centerList, setCenterList] = useState<ListState>({query:'',page:1});
+  const [budgetList, setBudgetList] = useState<ListState>({query:'',page:1});
+  const route = history[history.length - 1];
+  const page = route.page;
+  const open = (route: Route) => setHistory(history => [...history,route]);
+  const back = () => setHistory(history => history.length > 1 ? history.slice(0,-1) : [{page}]);
+  const backLabel = `Back to ${history[history.length - 2]?.page ?? page}`;
   const [dark, setDark] = useState(document.documentElement.dataset.colorMode === 'dark');
   useEffect(() => {
     const sync = () => setDark(document.documentElement.dataset.colorMode === 'dark' || document.body.dataset.colorMode === 'dark');
@@ -143,11 +155,14 @@ function App() {
   }, []);
   return <ThemeProvider colorMode={dark ? 'night' : 'day'}><BaseStyles className="canvas-shell">
     <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true">F</span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div><Label>Read only</Label></header>
-    <div className="app-layout"><aside className="sidebar"><nav aria-label="Main navigation">{[
+    <div className="app-layout"><aside className="sidebar"><nav aria-label="Main navigation">{([
       {name: 'Overview', icon: GraphIcon}, {name: 'Cost Centers', icon: OrganizationIcon},
       {name: 'Budgets', icon: CreditCardIcon}, {name: 'Users', icon: PeopleIcon},
-    ].map(item => <Button key={item.name} block variant="invisible" alignContent="start" leadingVisual={item.icon} aria-current={page === item.name ? 'page' : undefined} onClick={() => setPage(item.name)}>{item.name}</Button>)}</nav></aside>
-      {page === 'Overview' ? <OverviewPage /> : page === 'Cost Centers' ? <CostCenters /> : <main><h2>{page}</h2></main>}
+    ] satisfies {name: Page; icon: typeof GraphIcon}[]).map(item => <Button key={item.name} block variant="invisible" alignContent="start" leadingVisual={item.icon} aria-current={page === item.name ? 'page' : undefined} onClick={() => setHistory([{page:item.name}])}>{item.name}</Button>)}</nav></aside>
+      {page === 'Overview' ? <OverviewPage /> : page === 'Cost Centers' ?
+        <CostCenters selected={route.id} list={centerList} setList={setCenterList} select={id => open({page:'Cost Centers',id})} back={back} backLabel={backLabel} /> :
+        page === 'Budgets' ? <Budgets selected={route.id} list={budgetList} setList={setBudgetList} select={id => open({page:'Budgets',id})} back={back} backLabel={backLabel} canGoBack={history.length > 1} /> :
+        <main><div className="overview-heading"><div><div className="eyebrow">CONFIGURATION</div><h2>{page}</h2></div></div></main>}
     </div>
   </BaseStyles></ThemeProvider>;
 }

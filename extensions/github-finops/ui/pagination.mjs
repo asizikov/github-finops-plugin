@@ -18,11 +18,15 @@ export function paginateCenters(centers, query, requestedPage) {
     const search = query.trim().toLowerCase();
     const filtered = centers.filter(center => [center.name, center.id, center.state ?? ""]
         .some(value => value.toLowerCase().includes(search)));
-    const pages = Math.max(1, Math.ceil(filtered.length / 25));
+    return paginateItems(filtered, requestedPage);
+}
+
+export function paginateItems(items, requestedPage) {
+    const pages = Math.max(1, Math.ceil(items.length / 25));
     const page = Math.max(1, Math.min(pages, requestedPage));
     const offset = (page - 1) * 25;
     return {
-        items: filtered.slice(offset, offset + 25), total: filtered.length, pages, page,
-        start: filtered.length ? offset + 1 : 0, end: Math.min(offset + 25, filtered.length),
+        items: items.slice(offset, offset + 25), total: items.length, pages, page,
+        start: items.length ? offset + 1 : 0, end: Math.min(offset + 25, items.length),
     };
 }

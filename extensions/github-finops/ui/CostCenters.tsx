@@ -1,6 +1,6 @@
-import {useEffect, useState} from 'react';
-import {Button, Label, TextInput, FormControl, Spinner, Flash} from '@primer/react';
-import {paginateCenters, resourceTypeLabels} from './pagination.mjs';
+import {Button, Label, TextInput, FormControl} from '@primer/react';
+import {paginateCenters, resourceTypeLabels, type ListState} from './pagination.mjs';
+import {useSnapshot, SnapshotStatus, RefreshButton} from './Snapshot';
 
 type Resource = {type: string; name: string};
 type Center = {
@@ -9,72 +9,15 @@ type Center = {
   aiCreditPoolState?: {targetAmount?: number | null; currentAmount?: number | null} | null;
   resources: Resource[]; resourcesComplete?: boolean;
 };
-type Snapshot<T> = {data: T; cache: {
-  source: 'cached' | 'live'; stale: boolean; fetchedAt: string; error: string | null; retryAt: string | null;
-}};
 const cap = (value: boolean | null | undefined) => value === true ? 'Enabled' : value === false ? 'Disabled' : 'Unknown';
 const valueLabel = (value: string | number | null | undefined) =>
   value === undefined ? 'Not returned' : value === null ? 'Unavailable' : String(value);
 
-function useSnapshot<T>(endpoint: string) {
-  const [snapshot, setSnapshot] = useState<Snapshot<T> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [retry, setRetry] = useState<string | null>(null);
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  async function refresh(live = false, signal?: AbortSignal) {
-    setLoading(true); setError(null);
-    try {
-      const response = await fetch(`./${endpoint}${live ? '?refresh=1' : ''}`, {signal, cache: 'no-store'});
-      const data = await response.json();
-      if (!response.ok) {
-        setRetry(data.retryAt ?? null);
-        throw new Error(data.error ?? 'Could not read cost center configuration.');
-      }
-      if (!signal?.aborted) {setSnapshot(data); setRetry(null);}
-    } catch (error) {
-      if (!signal?.aborted) setError(error instanceof Error ? error.message : 'Could not read configuration.');
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }
-  useEffect(() => {
-    const controller = new AbortController();
-    void refresh(false, controller.signal);
-    return () => controller.abort();
-  }, [endpoint]);
-  const retryAt = retry ?? snapshot?.cache.retryAt;
-  return {snapshot, error, loading, now, retryAt, blocked: Boolean(retryAt && Date.parse(retryAt) > now), refresh};
-}
-
-function SnapshotStatus<T>({state}: {state: ReturnType<typeof useSnapshot<T>>}) {
-  const {snapshot, loading, error, now, blocked, retryAt} = state;
-  const minutes = snapshot ? Math.max(0, Math.floor((now - Date.parse(snapshot.cache.fetchedAt)) / 60000)) : 0;
-  return <>
-    {error && <div className="error" role="alert"><Flash variant="danger">{error}{snapshot && ' Saved values below may be stale.'}</Flash></div>}
-    {snapshot && <div className="cache-status">
-      <Label>{snapshot.cache.source === 'cached' ? 'Cached snapshot' : 'Live snapshot'}</Label>
-      <p className="caption">Last successful read {new Date(snapshot.cache.fetchedAt).toLocaleString()} ({minutes === 0 ? 'less than a minute old' : `${minutes} minute${minutes === 1 ? '' : 's'} old`}).{snapshot.cache.stale && ' Saved data may be stale.'}</p>
-      {snapshot.cache.error && <div className="error" role="alert"><Flash variant="danger">{snapshot.cache.error}</Flash></div>}
-    </div>}
-    {blocked && retryAt && <p className="cooldown" role="status">Refresh available after {new Date(retryAt).toLocaleString()}. No automatic retries.</p>}
-    {loading && !snapshot && <div className="loading" role="status"><Spinner size="medium" /><span>Reading cost center configuration...</span></div>}
-  </>;
-}
-
-function RefreshButton<T>({state}: {state: ReturnType<typeof useSnapshot<T>>}) {
-  return <Button disabled={state.loading || state.blocked} onClick={() => void state.refresh(true)}>{state.loading ? 'Refreshing...' : state.blocked ? 'Rate limited' : 'Refresh'}</Button>;
-}
-
-function Details({id, back}: {id: string; back: () => void}) {
+function Details({id, back, backLabel}: {id: string; back: () => void; backLabel: string}) {
   const state = useSnapshot<Center>(`cost-centers/${encodeURIComponent(id)}`);
   const center = state.snapshot?.data;
   return <main>
-    <Button variant="invisible" onClick={back}>Back to Cost Centers</Button>
+    <Button variant="invisible" onClick={back}>{backLabel}</Button>
     <div className="overview-heading"><div><h2>{center?.name ?? 'Cost center configuration'}</h2><p className="muted">Read-only configuration and assigned resources.</p></div><RefreshButton state={state} /></div>
     <SnapshotStatus state={state} />
     {center && <div aria-busy={state.loading}>
@@ -96,12 +39,12 @@ function Details({id, back}: {id: string; back: () => void}) {
   </main>;
 }
 
-export default function CostCenters() {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
-  const [page, setPage] = useState(1);
-  return selected ? <Details key={selected} id={selected} back={() => setSelected(null)} /> :
-    <CenterList query={query} setQuery={value => {setQuery(value);setPage(1);}} page={page} setPage={setPage} select={setSelected} />;
+export default function CostCenters({selected, list, setList, select, back, backLabel}: {
+  selected?: string; list: ListState; setList: (value: ListState) => void; select: (id: string) => void;
+  back: () => void; backLabel: string;
+}) {
+  return selected ? <Details key={selected} id={selected} back={back} backLabel={backLabel} /> :
+    <CenterList query={list.query} setQuery={query => setList({query,page:1})} page={list.page} setPage={page => setList({...list,page})} select={select} />;
 }
 
 function CenterList({query, setQuery, page, setPage, select}: {

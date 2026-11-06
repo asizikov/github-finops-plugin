@@ -194,3 +194,56 @@ test("list/detail caches reuse durable snapshots and retain data/errors independ
     state.account = "account-two";
     await assert.rejects(cache.get(input,{resource:"cost-centers"}),/Offline/);
 });
+
+test("budget list/detail snapshots persist, isolate access and retain data through failures and cooldown", async t => {
+    t.mock.method(console, "error", () => {});
+    const {store, options, state} = setup(t);
+    let calls = 0;
+    let failure;
+    const cache = new OverviewCache(store, {...options, read: async path => {
+        calls++;
+        if (failure) throw failure;
+        const budget = {id:"budget-one",budget_scope:"enterprise",budget_type:"ProductPricing",
+            budget_product_sku:"actions",budget_amount:80,consumed_amount:5};
+        return path.includes("?") ? {budgets:[budget],has_next_page:false} : budget;
+    }});
+    await cache.get(input,{resource:"budgets"});
+    await cache.get(input,{resource:"budget-detail",id:"budget-one"});
+    const restarted = new OverviewCache(store,{...options,read:async () => {throw new Error("Unexpected API call");}});
+    assert.equal((await restarted.get(input,{resource:"budgets"})).data[0].amount,80);
+    assert.equal((await restarted.get(input,{resource:"budget-detail",id:"budget-one"})).data.consumed,5);
+    assert.equal(calls,2);
+    failure = new Error("Offline");
+    const failed = await cache.get(input,{resource:"budgets",refresh:true});
+    assert.equal(failed.data.length,1);
+    assert.match(failed.cache.error,/refresh failed/);
+    failure = new GitHubReadError("Rate limited","2025-01-02T00:10:00Z");
+    const limited = await cache.get(input,{resource:"budget-detail",id:"budget-one",refresh:true});
+    assert.equal(limited.data.amount,80);
+    const before = calls;
+    await cache.get(input,{resource:"budgets",refresh:true});
+    assert.equal(calls,before);
+    state.account = "other-account";
+    await assert.rejects(cache.get(input,{resource:"budgets"}),/Rate limited/);
+    state.account = "account-one";
+    await assert.rejects(cache.get({enterprise:"another-enterprise"},{resource:"budgets"}),/No snapshot/);
+});
+
+test("budget consumption snapshots rotate with UTC billing month", async t => {
+    const {store, options, state} = setup(t);
+    let calls = 0;
+    const cache = new OverviewCache(store,{...options,read:async path => {
+        calls++;
+        const budget = {id:"budget-one",budget_scope:"enterprise",budget_type:"ProductPricing",
+            budget_product_sku:"actions",budget_amount:80};
+        return path.includes("?") ? {budgets:[budget],has_next_page:false} : budget;
+    }});
+    for (const resource of ["budgets","budget-detail"]) {
+        await cache.get(input,{resource,id:resource === "budget-detail" ? "budget-one" : undefined});
+    }
+    state.now = new Date("2025-02-01T00:00:00Z");
+    for (const resource of ["budgets","budget-detail"]) {
+        assert.equal((await cache.get(input,{resource,id:resource === "budget-detail" ? "budget-one" : undefined})).cache.source,"live");
+    }
+    assert.equal(calls,4);
+});

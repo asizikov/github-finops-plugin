@@ -32,6 +32,12 @@ test("serves bundled UI and normalized reads only within its protected loopback 
             {refresh:false,resource:"cost-centers"},
             {refresh:true,resource:"cost-center-detail",id:"center-one"},
         ]);
+        assert.equal((await fetch(`${url}budgets`)).status,200);
+        assert.equal((await fetch(`${url}budgets/budget-one?refresh=1`)).status,200);
+        assert.deepEqual(loads.slice(4),[
+            {refresh:false,resource:"budgets"},
+            {refresh:true,resource:"budget-detail",id:"budget-one"},
+        ]);
         assert.equal((await fetch(new URL("/", url))).status, 404);
         assert.equal((await fetch(`${url}overview`, { method: "POST" })).status, 405);
         assert.equal(await status(`${url}overview`, { "sec-fetch-site": "cross-site" }), 403);

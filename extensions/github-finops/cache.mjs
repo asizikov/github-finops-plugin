@@ -6,6 +6,9 @@ import { createHash } from "node:crypto";
 import { loadOverview, validateInput } from "./budgets.mjs";
 import { ghRead, localAccessContext, GitHubReadError } from "./github.mjs";
 import { loadCostCenters, validateCenterId } from "./cost-centers.mjs";
+import { loadBudgets, validateBudgetId } from "./budget-list.mjs";
+
+const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail"];
 
 class LocalCacheError extends Error {
     constructor(cause) {
@@ -49,7 +52,7 @@ export class SnapshotStore {
             if (!row) return null;
             const snapshot = JSON.parse(row.payload);
             if (snapshot.kind) {
-                if (!["cost-centers", "cost-center-detail"].includes(snapshot.kind) ||
+                if (!configurationResources.includes(snapshot.kind) ||
                     !Number.isFinite(Date.parse(snapshot.fetchedAt)) || snapshot.data == null) {
                     throw new Error("Invalid cached configuration.");
                 }
@@ -125,13 +128,17 @@ export class OverviewCache {
     }
 
     async get(input, { refresh = false, resource = "overview", id } = {}) {
-        if (!["overview", "cost-centers", "cost-center-detail"].includes(resource)) throw new Error("Invalid cache resource.");
+        if (resource !== "overview" && !configurationResources.includes(resource)) throw new Error("Invalid cache resource.");
         if (resource === "cost-center-detail") validateCenterId(id);
+        if (resource === "budget-detail") validateBudgetId(id);
         const config = validateInput(input);
         const context = digest([config.host.toLowerCase(), await this.identity(config.host)]);
         const now = this.clock();
         const scope = resource === "overview"
             ? [now.getUTCFullYear(), now.getUTCMonth() + 1] : [resource, id ?? null];
+        if (resource === "budgets" || resource === "budget-detail") {
+            scope.push(now.getUTCFullYear(), now.getUTCMonth() + 1);
+        }
         const key = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context, ...scope]);
         const cached = this.store.get(key);
         const retryAt = this.store.deadline(context, now);
@@ -164,7 +171,9 @@ export class OverviewCache {
         let live;
         try {
             live = resource === "overview" ? await this.load(config, read, now)
-                : await loadCostCenters(config, read, resource === "cost-center-detail" ? id : undefined);
+                : resource === "budgets" || resource === "budget-detail"
+                    ? await loadBudgets(config, read, resource === "budget-detail" ? id : undefined)
+                    : await loadCostCenters(config, read, resource === "cost-center-detail" ? id : undefined);
         } catch (error) {
             if (error instanceof LocalCacheError) throw error;
             console.error("Live data refresh failed:", error);

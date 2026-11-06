@@ -25,7 +25,7 @@ the runtime resolves it automatically.
 
 The canvas reads the enterprise AI Credits budget and enterprise-wide default
 per-user budget. Missing consumption is unavailable, not zero. Cost center
-budgets and individual overrides are outside this version's scope.
+budgets and individual overrides are outside the overview's scope.
 
 Current spending uses the enterprise AI-credit usage report with an explicit
 UTC current year/month and no cost-center, organization, user, model, or product
@@ -67,8 +67,9 @@ for an unchanged credential. Refresh is required to recheck GitHub access.
 
 ## Cost centers
 
-The sidebar keeps Overview and adds Cost Centers, plus empty Budgets and Users
-pages. Cost center search covers the full loaded list by name, ID, and state;
+The sidebar includes Overview, Cost Centers, Budgets, and an empty Users page.
+All page headers stay at the top, including empty and loading states.
+Cost center search covers the full loaded list by name, ID, and state;
 visible list pages contain at most 25 rows. Selecting a name or row opens
 read-only configuration and all assigned resources. The detail API's resource
 pages are fetched until `has_next_page` is false.
@@ -86,3 +87,28 @@ The pool-enabled flag is a **cost-center pool cap**, not a statement that AI
 credits are entirely unavailable when the flag is false.
 
 Configuration fields: [Cost center API](https://docs.github.com/en/enterprise-cloud@latest/rest/billing/cost-centers).
+
+## Budgets
+
+The Budgets page reads all accessible enterprise budgets across scopes and
+products, fetching every list page without a scope filter. Search covers the
+full list by product/SKU, pricing type, scope, entity, expiration, or ID.
+Visible pages contain at most 25 rows. Selecting a product opens its read-only
+configuration, reported consumption, alerts, enforcement, and optional expiration.
+Back navigation preserves the search and page.
+
+Lists and details use the same persistent SQLite caching and manual refresh as
+cost centers, with independent resource/ID keys and shared rate-limit cooldown.
+Budget keys also include the UTC billing month so consumption cannot carry over
+silently into a new month's first open.
+List consumption is shown only when returned; selecting a budget reads its
+detail endpoint without fetching details for every list row. Missing consumption
+is unavailable, never zero or an aggregate of member usage.
+
+Known monetary products/SKUs use USD; documented license products/SKUs use
+license counts. Unknown or ambiguous product units are explicitly unavailable,
+not assumed to be dollars. Raw product/SKU and pricing identifiers remain visible.
+Budgets overlap and must not be summed; tracked consumption is not an invoice.
+
+References: [Budget API](https://docs.github.com/en/enterprise-cloud@latest/rest/billing/budgets),
+[Product and SKU names](https://docs.github.com/en/enterprise-cloud@latest/billing/reference/product-and-sku-names).

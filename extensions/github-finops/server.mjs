@@ -33,7 +33,8 @@ export async function startServer(input, load = cachedOverview) {
         }
         const route = req.url?.startsWith(prefix) ? req.url.slice(prefix.length) : null;
         const centerRoute = route?.match(/^cost-centers(?:\/([a-zA-Z0-9-]+))?(\?refresh=1)?$/);
-        if (route === "overview" || route === "overview?refresh=1" || centerRoute) {
+        const budgetRoute = route?.match(/^budgets(?:\/([a-zA-Z0-9-]+))?(\?refresh=1)?$/);
+        if (route === "overview" || route === "overview?refresh=1" || centerRoute || budgetRoute) {
             res.setHeader("Content-Type", "application/json");
             try {
                 const options = { refresh: route.endsWith("?refresh=1") };
@@ -41,11 +42,15 @@ export async function startServer(input, load = cachedOverview) {
                     options.resource = centerRoute[1] ? "cost-center-detail" : "cost-centers";
                     if (centerRoute[1]) options.id = centerRoute[1];
                 }
+                if (budgetRoute) {
+                    options.resource = budgetRoute[1] ? "budget-detail" : "budgets";
+                    if (budgetRoute[1]) options.id = budgetRoute[1];
+                }
                 res.end(JSON.stringify(await load(config, options)));
             } catch (error) {
-                console.error("Overview read failed:", error);
+                console.error("Canvas data read failed:", error);
                 res.writeHead(502).end(JSON.stringify({
-                    error: error.publicMessage ?? "Could not read budgets. Check gh authentication, enterprise access, hostname, and network connectivity, then refresh.",
+                    error: error.publicMessage ?? "Could not read billing data. Check gh authentication, enterprise access, hostname, and network connectivity, then refresh.",
                     retryAt: error.retryAt ?? null,
                 }));
             }
