@@ -7,7 +7,8 @@ import { loadOverview, validateInput } from "./budgets.mjs";
 import { ghRead, localAccessContext, GitHubReadError } from "./github.mjs";
 import { loadCostCenters, validateCenterId } from "./cost-centers.mjs";
 import { loadBudgets, validateBudgetId } from "./budget-list.mjs";
-import { relationshipSchema, indexRelationships, readRelationships } from "./relationships.mjs";
+import { indexRelationships, readRelationships } from "./relationships.mjs";
+import { migrateDatabase, CacheSchemaError } from "./migrations.mjs";
 import {loadUser} from "./users.mjs";
 import {normalizeUsername} from "./ui/user-format.mjs";
 import {loadTeamCostCenters, validateTeamSlug} from "./enterprise-teams.mjs";
@@ -25,7 +26,8 @@ class CacheClearedError extends Error {
 
 class LocalCacheError extends Error {
     constructor(cause) {
-        super("Could not access the local SQLite cache. Check cache permissions and database integrity.", { cause });
+        super(cause instanceof CacheSchemaError ? cause.publicMessage :
+            "Could not access the local SQLite cache. Check cache permissions and database integrity; close FinOps canvases and back up the cache with its WAL/SHM files before repair.", { cause });
         this.publicMessage = this.message;
         this.code = "local_cache_error";
     }
@@ -38,30 +40,7 @@ export class SnapshotStore {
             closeSync(openSync(path, "a", 0o600));
             chmodSync(path, 0o600);
             this.db = new DatabaseSync(path);
-            this.db.exec(`
-                PRAGMA busy_timeout = 5000;
-                PRAGMA journal_mode = WAL;
-                CREATE TABLE IF NOT EXISTS snapshots (
-                    cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL,
-                    last_error TEXT, namespace TEXT, resource TEXT
-                );
-                CREATE TABLE IF NOT EXISTS cache_contexts (
-                    namespace TEXT PRIMARY KEY, generation INTEGER NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS rate_limits (
-                    access_context TEXT PRIMARY KEY, retry_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS attribution_revisions (
-                    namespace TEXT PRIMARY KEY, revision INTEGER NOT NULL
-                );
-            `);
-            this.transaction(() => {
-                const columns = this.db.prepare("PRAGMA table_info(snapshots)").all().map(row => row.name);
-                for (const column of ["namespace", "resource"]) {
-                    if (!columns.includes(column)) this.db.exec(`ALTER TABLE snapshots ADD COLUMN ${column} TEXT`);
-                }
-            });
-            this.db.exec(relationshipSchema);
+            migrateDatabase(this.db);
         } catch (error) {
             this.db?.close();
             throw new LocalCacheError(error);

@@ -324,7 +324,7 @@ test("clearing preserves durable rate-limit cooldown and does not request live d
 
 test("upgrades the legacy snapshot schema without losing saved data", t => {
     const {store,path,state} = setup(t);
-    store.db.exec("DROP TABLE snapshots; CREATE TABLE snapshots (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL, last_error TEXT)");
+    store.db.exec("PRAGMA user_version = 0; DROP TABLE snapshots; CREATE TABLE snapshots (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL, last_error TEXT)");
     store.db.prepare("INSERT INTO snapshots VALUES (?,?,NULL)").run("legacy",
         JSON.stringify({kind:"budgets",data:[],fetchedAt:state.now.toISOString()}));
     const migrated = new SnapshotStore(path);
