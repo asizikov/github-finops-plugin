@@ -5,15 +5,16 @@ spending, budgets, cost centers, and on-demand user lookups. Data is read throug
 your locally authenticated GitHub CLI (`gh`) and cached locally in SQLite.
 The plugin does not change enterprise settings.
 
-## Get started
+## Manual installation (Copilot CLI)
 
 Requires a Copilot app/runtime with canvas extension support and `gh` with
-enterprise billing read access. Follow [local setup](docs/SETUP.md), then ask
-Copilot to run `github-finops-plugin:finops-init` to verify prerequisites,
-authentication, and API access.
+enterprise billing read access. Install from this repository using Copilot CLI:
 
-One-click app installation is not configured for this repository yet: the
-[documented app install flow](https://docs.github.com/en/copilot/how-tos/github-copilot-app/open-with-deep-links#plugin-parameters)
-requires a plugin in a registered marketplace.
+```sh
+copilot plugin install asizikov/github-finops-plugin
+```
+
+After installation, ask Copilot to run `github-finops-plugin:finops-init` to
+verify prerequisites, authentication, and API access.
 
 [Setup and development](docs/SETUP.md) | [MIT license](LICENSE)
