@@ -336,6 +336,24 @@ test("upgrades the legacy snapshot schema without losing saved data", t => {
     } finally {migrated.close();}
 });
 
+test("attention inputs stay cache-only and expose known detail consumption alongside the saved list", async t => {
+    const {store,options} = setup(t);
+    let calls = 0;
+    const budget = {id:"sample-budget",budget_scope:"enterprise",budget_type:"BundlePricing",budget_product_sku:"ai_credits",budget_amount:100};
+    const cache = new OverviewCache(store,{...options,read:async path => {
+        calls++;
+        return path.includes("?") ? {budgets:[budget],has_next_page:false} : {...budget,consumed_amount:95};
+    }});
+    assert.equal(await cache.get(input,{resource:"budgets",cacheOnly:true}),null);
+    assert.equal(calls,0);
+    await cache.get(input,{resource:"budgets"});
+    await cache.get(input,{resource:"budget-detail",id:"sample-budget"});
+    const saved = await cache.get(input,{resource:"budgets",cacheOnly:true});
+    assert.equal(saved.data[0].consumed,null);
+    assert.equal(saved.relationships.budgets[0].consumed,95);
+    assert.equal(calls,2);
+});
+
 test("budget consumption snapshots rotate with UTC billing month", async t => {
     const {store, options, state} = setup(t);
     let calls = 0;

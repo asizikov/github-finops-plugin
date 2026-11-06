@@ -10,6 +10,7 @@ import Budgets from './Budgets';
 import Users, {type UserLookup} from './Users';
 import Settings from './Settings';
 import Onboarding, {type Startup} from './Onboarding';
+import AttentionQueue from './AttentionQueue';
 import type {ListState} from './pagination.mjs';
 
 type Budget = {
@@ -83,7 +84,7 @@ function BudgetCard({budget}: {budget: Budget}) {
   </section>;
 }
 
-function OverviewPage() {
+function OverviewPage({openBudget}: {openBudget: (id: string) => void}) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +133,8 @@ function OverviewPage() {
       {blocked && retryAt && <p className="cooldown" role="status">Refresh available after {new Date(retryAt).toLocaleString()}. No automatic retries.</p>}
       {loading && !overview && <div className="loading" role="status"><Spinner size="medium" /><span>Reading enterprise spending and budgets...</span></div>}
       {overview && <div aria-busy={loading}><SpendingOverview spending={overview.spending} /><div className="cards">{overview.budgets.map(budget => <BudgetCard key={budget.scope} budget={budget} />)}</div><footer><span>Budgets last read {new Date(overview.cache.budgetsAt).toLocaleString()}{overview.cache.spendingAt && <> / Spending last read {new Date(overview.cache.spendingAt).toLocaleString()}</>}</span><span>Source: GitHub billing API / local SQLite</span></footer></div>}
-      <p className="scope-note">Enterprise scope only. Cost center budgets and individual member overrides are not shown.</p>
+      <AttentionQueue openBudget={openBudget} />
+      <p className="scope-note">Summary cards show enterprise scope only. The attention queue uses cached budgets across scopes and products.</p>
     </main>;
 }
 
@@ -179,7 +181,7 @@ function App() {
       <div className="page-scroll" tabIndex={0} role="region" aria-label={startup?.hasOverview ? `${page} page content` : 'Connect your enterprise'} key={`${startup?.hasOverview}-${page}-${route.id ?? ''}`}>
       {!startup ? <main><h2>GitHub FinOps</h2><p role="status">Reading local startup information...</p></main> : !startup.hasOverview ?
         <Onboarding startup={startup} connected={() => setStartup({...startup,hasOverview:true})} /> :
-      page === 'Overview' ? <OverviewPage /> : page === 'Settings' ? <Settings cleared={() => {
+      page === 'Overview' ? <OverviewPage openBudget={id => open({page:'Budgets',id})} /> : page === 'Settings' ? <Settings cleared={() => {
         setUserLookup({query:'',login:null});setCenterList({query:'',page:1});setBudgetList({query:'',page:1});
         setHistory([{page:'Overview'}]);setStartup({...startup,hasOverview:false,error:null});
       }} /> : page === 'Cost Centers' ?

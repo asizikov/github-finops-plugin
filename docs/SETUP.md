@@ -30,9 +30,9 @@ Include the updated `extensions/github-finops/assets/` files when distributing
 the plugin, then reload extensions. Do not install the Copilot SDK as a package:
 the runtime resolves it automatically.
 
-The canvas reads the enterprise AI Credits budget and enterprise-wide default
-per-user budget. Missing consumption is unavailable, not zero. Cost center
-budgets and individual overrides are outside the overview's scope.
+The overview summary cards read the enterprise AI Credits budget and
+enterprise-wide default per-user budget. Missing consumption is unavailable,
+not zero; the separate cached attention queue can include other budget scopes.
 
 Current spending uses the enterprise AI-credit usage report with an explicit
 UTC current year/month and no cost-center, organization, user, model, or product
@@ -126,6 +126,15 @@ Known monetary products/SKUs use USD; documented license products/SKUs use
 license counts. Unknown or ambiguous product units are explicitly unavailable,
 not assumed to be dollars. Raw product/SKU and pricing identifiers remain visible.
 Budgets overlap and must not be summed; tracked consumption is not an invoice.
+
+The Overview attention queue evaluates cached budgets only; it never fetches a
+list, every detail or users in the background. It flags known consumption at or
+above 90%, exhausted/over-threshold controls, exceeded alert-only thresholds and
+user overrides expiring within seven UTC calendar days. Zero limits are handled
+without division; unknown units or consumption do not imply risk or zero use.
+Scope/product filters and detail links retain the ordinary navigation history.
+Coverage and saved read times stay visible; an empty queue is not an all-clear
+for budgets or users that have not been loaded.
 
 References: [Budget API](https://docs.github.com/en/enterprise-cloud@latest/rest/billing/budgets),
 [Product and SKU names](https://docs.github.com/en/enterprise-cloud@latest/billing/reference/product-and-sku-names).

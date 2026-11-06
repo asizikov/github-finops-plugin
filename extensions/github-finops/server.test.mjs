@@ -56,6 +56,10 @@ test("serves bundled UI and normalized reads only within its protected loopback 
         assert.equal((await fetch(`${url}overview`, { method: "POST" })).status, 405);
         assert.equal(await status(`${url}overview`, { "sec-fetch-site": "cross-site" }), 403);
         assert.equal(await status(`${url}overview`, { host: "evil.example" }), 403);
+        assert.equal((await fetch(`${url}attention`)).status,200);
+        assert.deepEqual(loads.at(-1),{refresh:false,resource:"budgets",cacheOnly:true});
+        assert.equal((await fetch(`${url}attention?refresh=1`)).status,404);
+        assert.equal((await fetch(`${url}attention`,{method:"POST"})).status,405);
     } finally {
         await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
