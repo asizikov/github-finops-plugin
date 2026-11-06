@@ -59,6 +59,7 @@ test("distinguishes empty, unavailable and incomplete resource assignments", asy
 });
 
 test("rejects invalid IDs, incomplete pagination, repeated pages and unexpected detail identity", async () => {
+    await assert.rejects(loadCostCenters(input, async () => ({costCenters:[center()],has_next_page:true})), /incomplete cost center list/);
     await assert.rejects(loadCostCenters(input, async () => ({}), "../other"));
     await assert.rejects(loadCostCenters(input, async () => center(), "center-one"), /resource page/);
     await assert.rejects(loadCostCenters(input, async () => ({...center(), has_next_page:true})), /cost center list/);

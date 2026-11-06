@@ -112,3 +112,28 @@ Budgets overlap and must not be summed; tracked consumption is not an invoice.
 
 References: [Budget API](https://docs.github.com/en/enterprise-cloud@latest/rest/billing/budgets),
 [Product and SKU names](https://docs.github.com/en/enterprise-cloud@latest/billing/reference/product-and-sku-names).
+
+## Cost center and budget relationships
+
+SQLite tracks budget-to-cost-center links alongside successful snapshots in one
+transaction, isolated by host, enterprise, and credential context. Only
+`cost_center` and `multi_user_cost_center` budget scopes participate; aggregate
+spending budgets and per-user defaults remain distinct, including multiple
+products for one center.
+
+An entity matching a cost center ID links directly. Some API responses instead
+return display names: those are resolved only by an exact, case-sensitive,
+unique name in a complete saved cost center list. Name-resolved links are
+labeled as derived associations, not API-supplied foreign keys. Duplicate names,
+unmatched entities, and unloaded lists remain explicitly unresolved. No fuzzy
+matching or automatic API calls are used just to resolve a relationship.
+
+Existing local snapshots are indexed on warm reads without calling GitHub.
+Fresh complete lists and newer details reconcile removals, renames, and budget
+reassignments; failed refreshes retain the last successful relationships.
+Saved links show their provenance and age and may be stale. Missing saved links
+do not establish that no related budgets exist.
+
+Cost center details link to related budgets; budget lists and details link back
+to resolved cost centers. In-app back navigation preserves the originating
+detail view and each list's search and page.

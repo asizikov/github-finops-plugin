@@ -49,6 +49,7 @@ export async function loadCostCenters({ enterprise, host }, read, id) {
     if (!id) {
         const response = await read(base, host);
         if (!Array.isArray(response.costCenters)) throw new Error("GitHub returned an unexpected cost center list.");
+        if (response.has_next_page === true) throw new Error("GitHub returned an incomplete cost center list.");
         return response.costCenters.map(normalizeCenter).sort((a, b) => a.name.localeCompare(b.name));
     }
     validateCenterId(id);

@@ -1,7 +1,8 @@
 import {useEffect, useState} from 'react';
 import {Button, Label, Spinner, Flash} from '@primer/react';
+import type {RelationshipsData} from './Relationships';
 
-type Snapshot<T> = {data: T; cache: {
+type Snapshot<T> = {data: T; relationships?: RelationshipsData; cache: {
   source: 'cached' | 'live'; stale: boolean; fetchedAt: string; error: string | null; retryAt: string | null;
 }};
 

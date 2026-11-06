@@ -1,6 +1,7 @@
 import {Button, Label, TextInput, FormControl} from '@primer/react';
 import {paginateCenters, resourceTypeLabels, type ListState} from './pagination.mjs';
 import {useSnapshot, SnapshotStatus, RefreshButton} from './Snapshot';
+import {RelatedBudgets} from './Relationships';
 
 type Resource = {type: string; name: string};
 type Center = {
@@ -13,7 +14,7 @@ const cap = (value: boolean | null | undefined) => value === true ? 'Enabled' : 
 const valueLabel = (value: string | number | null | undefined) =>
   value === undefined ? 'Not returned' : value === null ? 'Unavailable' : String(value);
 
-function Details({id, back, backLabel}: {id: string; back: () => void; backLabel: string}) {
+function Details({id, back, backLabel, openBudget}: {id: string; back: () => void; backLabel: string; openBudget: (id: string | null) => void}) {
   const state = useSnapshot<Center>(`cost-centers/${encodeURIComponent(id)}`);
   const center = state.snapshot?.data;
   return <main>
@@ -32,6 +33,7 @@ function Details({id, back, backLabel}: {id: string; back: () => void; backLabel
       <h3>AI credit pool state</h3>
       {center.aiCreditPoolState ? <dl><div><dt>Target amount</dt><dd>{valueLabel(center.aiCreditPoolState.targetAmount)}</dd></div><div><dt>Current amount</dt><dd>{valueLabel(center.aiCreditPoolState.currentAmount)}</dd></div></dl> : <p className="muted">Pool state was not returned by the API.</p>}
       </section>
+      <RelatedBudgets centerId={center.id} relationships={state.snapshot?.relationships} open={openBudget} />
       <section className="resource-section"><h3>Assigned resources ({center.resources.length})</h3>
         {center.resources.length ? <div className="table-scroll"><table><caption className="sr-only">All assigned cost center resources</caption><thead><tr><th scope="col">Type</th><th scope="col">Name</th></tr></thead><tbody>{center.resources.map(resource => <tr key={JSON.stringify([resource.type, resource.name])}><td>{resource.type}</td><td>{resource.name}</td></tr>)}</tbody></table></div> : <p className="muted">No assigned resources returned.</p>}
       </section>
@@ -39,11 +41,11 @@ function Details({id, back, backLabel}: {id: string; back: () => void; backLabel
   </main>;
 }
 
-export default function CostCenters({selected, list, setList, select, back, backLabel}: {
+export default function CostCenters({selected, list, setList, select, back, backLabel, openBudget}: {
   selected?: string; list: ListState; setList: (value: ListState) => void; select: (id: string) => void;
-  back: () => void; backLabel: string;
+  back: () => void; backLabel: string; openBudget: (id: string | null) => void;
 }) {
-  return selected ? <Details key={selected} id={selected} back={back} backLabel={backLabel} /> :
+  return selected ? <Details key={selected} id={selected} back={back} backLabel={backLabel} openBudget={openBudget} /> :
     <CenterList query={list.query} setQuery={query => setList({query,page:1})} page={list.page} setPage={page => setList({...list,page})} select={select} />;
 }
 

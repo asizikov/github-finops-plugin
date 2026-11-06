@@ -1,13 +1,14 @@
 import {Button, Label, TextInput, FormControl} from '@primer/react';
 import {useSnapshot, SnapshotStatus, RefreshButton} from './Snapshot';
-import {budgetAmount, budgetEntity, budgetUnit, paginateBudgets, scopeLabel, type BudgetRecord} from './budget-format.mjs';
+import {budgetAmount, budgetUnit, paginateBudgets, scopeLabel, type BudgetRecord} from './budget-format.mjs';
+import {CostCenterLink} from './Relationships';
 import type {ListState} from './pagination.mjs';
 
 const enforcement = (value: boolean | null) => value === true ? 'Hard stop' : value === false ? 'Not enforced' : 'Unknown';
 const enabled = (value: boolean | null) => value === true ? 'Enabled' : value === false ? 'Disabled' : 'Unknown';
 const perUser = (budget: BudgetRecord) => budget.scope.startsWith('multi_user_') ? ' / user' : '';
 
-function Details({id, back, backLabel}: {id: string; back: () => void; backLabel: string}) {
+function Details({id, back, backLabel, openCenter}: {id: string; back: () => void; backLabel: string; openCenter: (id: string) => void}) {
   const state = useSnapshot<BudgetRecord>(`budgets/${encodeURIComponent(id)}`);
   const budget = state.snapshot?.data;
   return <main>
@@ -19,7 +20,7 @@ function Details({id, back, backLabel}: {id: string; back: () => void; backLabel
       <div><dt>Product / SKU</dt><dd>{budget.product}</dd></div>
       <div><dt>Pricing type</dt><dd>{budget.type}</dd></div>
       <div><dt>Scope</dt><dd>{scopeLabel(budget.scope)}</dd></div>
-      <div><dt>Entity</dt><dd>{budgetEntity(budget)}</dd></div>
+      <div><dt>Entity</dt><dd><CostCenterLink budget={budget} relationships={state.snapshot?.relationships} open={openCenter} /></dd></div>
       <div><dt>Budget limit</dt><dd>{budgetAmount(budget.amount, budget)}{perUser(budget)}</dd></div>
       <div><dt>Budget-tracked consumption</dt><dd>{budgetAmount(budget.consumed, budget)}</dd></div>
       <div><dt>Enforcement</dt><dd>{enforcement(budget.preventFurtherUsage)}</dd></div>
@@ -35,16 +36,17 @@ function Details({id, back, backLabel}: {id: string; back: () => void; backLabel
   </main>;
 }
 
-export default function Budgets({selected, list, setList, select, back, backLabel, canGoBack}: {
+export default function Budgets({selected, list, setList, select, back, backLabel, canGoBack, openCenter}: {
   selected?: string; list: ListState; setList: (value: ListState) => void; select: (id: string) => void;
-  back: () => void; backLabel: string; canGoBack: boolean;
+  back: () => void; backLabel: string; canGoBack: boolean; openCenter: (id: string) => void;
 }) {
-  return selected ? <Details key={selected} id={selected} back={back} backLabel={backLabel} /> :
-    <BudgetList query={list.query} setQuery={query => setList({query,page:1})} page={list.page} setPage={page => setList({...list,page})} select={select} back={canGoBack ? back : undefined} backLabel={backLabel} />;
+  return selected ? <Details key={selected} id={selected} back={back} backLabel={backLabel} openCenter={openCenter} /> :
+    <BudgetList query={list.query} setQuery={query => setList({query,page:1})} page={list.page} setPage={page => setList({...list,page})} select={select} openCenter={openCenter} back={canGoBack ? back : undefined} backLabel={backLabel} />;
 }
 
-function BudgetList({query, setQuery, page, setPage, select, back, backLabel}: {
+function BudgetList({query, setQuery, page, setPage, select, openCenter, back, backLabel}: {
   query: string; setQuery: (value: string) => void; page: number; setPage: (value: number) => void; select: (id: string) => void;
+  openCenter: (id: string) => void;
   back?: () => void; backLabel: string;
 }) {
   const state = useSnapshot<BudgetRecord[]>('budgets');
@@ -60,7 +62,7 @@ function BudgetList({query, setQuery, page, setPage, select, back, backLabel}: {
         <thead><tr><th scope="col">Product / SKU</th><th scope="col">Scope / entity</th><th scope="col">Limit</th><th scope="col">Consumption</th><th scope="col">Enforcement</th><th scope="col">Alerts</th></tr></thead>
         <tbody>{result.items.map(budget => <tr key={budget.id} onClick={() => select(budget.id)} className="clickable-row">
           <td><button type="button" className="row-link" onClick={event => {event.stopPropagation();select(budget.id);}}>{budget.product}</button><p className="caption">{budget.type}</p></td>
-          <td>{scopeLabel(budget.scope)}<div className="caption">{budgetEntity(budget)}</div></td>
+          <td>{scopeLabel(budget.scope)}<div className="caption"><CostCenterLink budget={budget} relationships={state.snapshot?.relationships} open={openCenter} /></div></td>
           <td>{budgetAmount(budget.amount, budget)}{perUser(budget)}</td><td>{budgetAmount(budget.consumed, budget)}</td>
           <td><Label>{enforcement(budget.preventFurtherUsage)}</Label></td><td>{enabled(budget.alerts)}</td>
         </tr>)}</tbody>

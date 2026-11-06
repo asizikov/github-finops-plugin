@@ -7,6 +7,7 @@ import { loadOverview, validateInput } from "./budgets.mjs";
 import { ghRead, localAccessContext, GitHubReadError } from "./github.mjs";
 import { loadCostCenters, validateCenterId } from "./cost-centers.mjs";
 import { loadBudgets, validateBudgetId } from "./budget-list.mjs";
+import { relationshipSchema, indexRelationships, readRelationships } from "./relationships.mjs";
 
 const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail"];
 
@@ -36,6 +37,7 @@ export class SnapshotStore {
                     access_context TEXT PRIMARY KEY, retry_at TEXT NOT NULL
                 );
             `);
+            this.db.exec(relationshipSchema);
         } catch (error) {
             this.db?.close();
             throw new LocalCacheError(error);
@@ -65,12 +67,33 @@ export class SnapshotStore {
         });
     }
 
-    put(key, snapshot, error = null) {
-        this.operation(() => this.db.prepare(`
-            INSERT INTO snapshots (cache_key, payload, last_error) VALUES (?, ?, ?)
-            ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, last_error = excluded.last_error
-        `).run(key, JSON.stringify(snapshot), error));
+    transaction(fn) {
+        this.db.exec("BEGIN IMMEDIATE");
+        try {
+            const result = fn();
+            this.db.exec("COMMIT");
+            return result;
+        } catch (error) {
+            this.db.exec("ROLLBACK");
+            throw error;
+        }
     }
+
+    put(key, snapshot, error = null, namespace) {
+        this.operation(() => this.transaction(() => {
+            this.db.prepare(`
+                INSERT INTO snapshots (cache_key, payload, last_error) VALUES (?, ?, ?)
+                ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, last_error = excluded.last_error
+            `).run(key, JSON.stringify(snapshot), error);
+            if (namespace) indexRelationships(this.db, namespace, key, snapshot);
+        }));
+    }
+
+    index(namespace, key, snapshot) {
+        this.operation(() => this.transaction(() => indexRelationships(this.db, namespace, key, snapshot)));
+    }
+
+    relationships(namespace) { return this.operation(() => readRelationships(this.db, namespace)); }
 
     fail(key, message) {
         this.operation(() => this.db.prepare("UPDATE snapshots SET last_error = ? WHERE cache_key = ?").run(message, key));
@@ -108,9 +131,9 @@ export class OverviewCache {
         this.pending = new Map();
     }
 
-    present(snapshot, source, retryAt = null, error = snapshot.lastError ?? null) {
+    present(snapshot, source, retryAt = null, error = snapshot.lastError ?? null, namespace) {
         if (snapshot.kind) {
-            return { data: snapshot.data, cache: {
+            return { data: snapshot.data, relationships: this.store.relationships(namespace), cache: {
                 source, stale: source === "cached" || Boolean(error),
                 fetchedAt: snapshot.fetchedAt, error, retryAt,
             } };
@@ -133,6 +156,7 @@ export class OverviewCache {
         if (resource === "budget-detail") validateBudgetId(id);
         const config = validateInput(input);
         const context = digest([config.host.toLowerCase(), await this.identity(config.host)]);
+        const namespace = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context]);
         const now = this.clock();
         const scope = resource === "overview"
             ? [now.getUTCFullYear(), now.getUTCMonth() + 1] : [resource, id ?? null];
@@ -140,24 +164,31 @@ export class OverviewCache {
             scope.push(now.getUTCFullYear(), now.getUTCMonth() + 1);
         }
         const key = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context, ...scope]);
+        if (resource !== "overview") {
+            for (const listScope of [["cost-centers", null], ["budgets", null, now.getUTCFullYear(), now.getUTCMonth() + 1]]) {
+                const listKey = digest([config.host.toLowerCase(), config.enterprise.toLowerCase(), context, ...listScope]);
+                this.store.index(namespace, listKey, this.store.get(listKey));
+            }
+        }
         const cached = this.store.get(key);
+        if (resource !== "overview" && cached) this.store.index(namespace, key, cached);
         const retryAt = this.store.deadline(context, now);
         if (retryAt) {
             const message = "GitHub requests are paused until the rate-limit cooldown ends. Cached data has not been refreshed.";
-            if (cached) return this.present(cached, "cached", retryAt, message);
+            if (cached) return this.present(cached, "cached", retryAt, message, namespace);
             throw new GitHubReadError(`${message} No snapshot is available for this account${resource === "overview" ? " and billing month" : ""}.`, retryAt);
         }
-        if (!refresh && cached) return this.present(cached, "cached");
+        if (!refresh && cached) return this.present(cached, "cached", null, undefined, namespace);
         let pending = this.pending.get(key);
         if (!pending) {
-            pending = this.refresh(key, config, context, cached, now, resource, id);
+            pending = this.refresh(key, config, context, cached, now, resource, id, namespace);
             this.pending.set(key, pending);
             pending.then(() => this.pending.delete(key), () => this.pending.delete(key));
         }
         return pending;
     }
 
-    async refresh(key, config, context, cached, now, resource, id) {
+    async refresh(key, config, context, cached, now, resource, id, namespace) {
         const read = async (path, host) => {
             const blocked = this.store.deadline(context, this.clock());
             if (blocked) throw new GitHubReadError("GitHub rate-limit cooldown is active.", blocked);
@@ -182,12 +213,14 @@ export class OverviewCache {
             if (!retained) throw error;
             const message = error.publicMessage ?? "Live refresh failed. The last successful snapshot is shown.";
             this.store.fail(key, message);
-            return this.present(retained, "cached", this.store.deadline(context, this.clock()), message);
+            return this.present(retained, "cached", this.store.deadline(context, this.clock()), message, namespace);
         }
         if (resource !== "overview") {
-            const snapshot = { kind: resource, data: live, fetchedAt: new Date().toISOString() };
-            this.store.put(key, snapshot);
-            return this.present(snapshot, "live", this.store.deadline(context, this.clock()));
+            const snapshot = { kind: resource, data: live, fetchedAt: new Date().toISOString(),
+                ...(["cost-centers", "budgets"].includes(resource) ? {complete: true} : {}),
+            };
+            this.store.put(key, snapshot, null, namespace);
+            return this.present(snapshot, "live", this.store.deadline(context, this.clock()), undefined, namespace);
         }
         const spendingFailed = live.spending.status === "error";
         const retained = this.store.get(key) ?? cached;

@@ -61,6 +61,7 @@ footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 2
 .table-scroll { overflow-x: auto; border: 1px solid var(--borderColor-default); border-radius: 8px; }
 .center-table { margin-top: 20px; }
 .resource-types { display: flex; flex-wrap: wrap; gap: 6px; min-width: 120px; }
+.relationship-note { display: block; margin-top: 6px; font-size: 11px; color: var(--fgColor-muted); }
 table { border-collapse: collapse; width: 100%; text-align: left; font-size: 13px; }
 th, td { padding: 12px 16px; border-bottom: 1px solid var(--borderColor-muted); overflow-wrap: anywhere; }
 thead { background: var(--bgColor-muted); }
