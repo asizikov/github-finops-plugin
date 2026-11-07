@@ -16,13 +16,13 @@ export default function UserAttribution({user, relationships, cached, openCenter
   const links = relationships?.links.filter(link => link.centerId === center?.id) ?? [];
   return <section className="spending-section user-effective" aria-labelledby="attribution-title">
     <h3 id="attribution-title">AI spending attribution</h3>
-    <p className="caption">Current attribution, not historical monthly allocation. This is separate from GitHub's effective per-user budget selection.</p>
-    <p><Label>{attribution.status === 'confirmed' ? 'Confirmed at last check' :
+    <p className="section-intro">Current attribution, not historical monthly allocation or effective per-user budget selection.</p>
+    <p className="attribution-result"><Label>{attribution.status === 'confirmed' ? 'Confirmed at last check' :
       attribution.status === 'provisional' ? 'Provisional' : 'Unresolved'}</Label>{' '}
       {center ? <button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button> :
         attribution.status === 'confirmed' ? <strong>Enterprise only</strong> : <strong>No confirmed winner</strong>}
     </p>
-    <p><strong>{methodLabel(attribution.method)}</strong>{attribution.unresolved.length === 0 && ` / ${attribution.reason}`}</p>
+    <p className="attribution-method"><strong>{methodLabel(attribution.method)}</strong>{attribution.unresolved.length === 0 && ` / ${attribution.reason}`}</p>
     {attribution.unresolved.length > 0 && <Flash variant="warning">{attribution.unresolved.join(' ')}</Flash>}
     <p className="caption">Evidence checked {new Date(attribution.checkedAt).toLocaleString()}.{cached && ' Saved evidence may be stale; opening this view makes no additional GitHub requests.'}</p>
     {attribution.invalidatedAt && <p className="caption">Configuration refreshed {new Date(attribution.invalidatedAt).toLocaleString()}; user evidence needs rechecking.</p>}
@@ -34,8 +34,8 @@ export default function UserAttribution({user, relationships, cached, openCenter
     </p>}
     <p className="caption">Checks: direct assignment {evidence.direct.state.replaceAll('_', ' ')}; enterprise teams {evidence.teams.state.replaceAll('_', ' ')}; Copilot organization {evidence.license.state.replaceAll('_', ' ')}.</p>
     {evidence.license.state === 'not_checked' && <p className="caption">Copilot organization not checked: a higher-priority assignment wins or higher-priority evidence is incomplete.</p>}
-    <details><summary>Alternative memberships and evidence</summary>
-      {attribution.alternatives.length ? attribution.alternatives.map((item, index) => <div className="notice" key={index}>
+    <details className="section-details"><summary>Alternative memberships and evidence</summary>
+      {attribution.alternatives.length ? attribution.alternatives.map((item, index) => <div className="evidence-item" key={index}>
         <p><strong>{item.method === 'direct' ? 'User membership check' : methodLabel(item.method)}</strong>{' / '}
           {item.htmlUrl ? <a href={item.htmlUrl} target="_blank" rel="noreferrer">{item.name}</a> : item.name}
           {item.center && <button className="row-link" type="button" onClick={() => openCenter(item.center!.id)}>{item.center.name}</button>}
@@ -46,7 +46,7 @@ export default function UserAttribution({user, relationships, cached, openCenter
       {user.enterpriseTeams?.items?.filter(team => !attribution.alternatives.some(item => item.slug === team.slug)).map(team =>
         <p className="caption" key={team.id}>{team.name}: lower-priority team assignment not evaluated; a direct assignment takes precedence or direct checks are incomplete.</p>)}
     </details>
-    {center && <div className="resource-section"><h4>Related saved budgets</h4>
+    {center && <div className="subsection"><h4>Related saved budgets</h4>
       {links.map(link => {
         const budget = relationships?.budgets.find(item => item.id === link.budgetId);
         return budget && <p key={link.budgetId}><button className="row-link" type="button" onClick={() => openBudget(budget.id)}>
@@ -56,6 +56,6 @@ export default function UserAttribution({user, relationships, cached, openCenter
       <p className="caption">{links.length ? 'Saved associations are not proof that a budget is effective or blocking.' :
         'No related budgets in saved data. Open Budgets to load configuration; no extra budget requests are made here.'}</p>
     </div>}
-    <p className="caption">Repository membership does not establish user AI credit attribution. For historical charges or ambiguous Copilot billing organizations, consult a detailed usage report.</p>
+    <p className="field-note section-note">Repository membership does not establish user AI credit attribution. For historical charges or ambiguous Copilot billing organizations, consult a detailed usage report.</p>
   </section>;
 }

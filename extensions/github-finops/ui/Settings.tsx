@@ -60,7 +60,7 @@ export default function Settings({cleared, updates, updateError}: {
   const retryAt = connection?.cache.retryAt ?? data?.retryAt;
   const blocked = Boolean(retryAt && Date.parse(retryAt) > now);
   return <main>
-    <div className="overview-heading"><div><div className="eyebrow">CONFIGURATION</div><h2>Settings</h2><p className="muted">Local installation and read-only GitHub connection checks.</p></div></div>
+    <div className="overview-heading"><div><h2>Settings</h2><p className="muted">Local installation, cached data, and GitHub connection checks.</p></div></div>
     {error && <Flash variant="danger">{error}</Flash>}
     {loading && !data && <div className="loading" role="status"><Spinner size="medium" />Loading local settings...</div>}
     {data && <>
@@ -94,12 +94,14 @@ export default function Settings({cleared, updates, updateError}: {
         {checked && <p className="caption">{connection?.cache.source === 'cached' ? 'Saved checks' : 'Checks completed'} {new Date(checked.checkedAt).toLocaleString()}. These results may be stale; each capability is independent.</p>}
         {(data.connectionError || connection?.cache.error) && <div className="error" role="alert"><Flash variant="danger">{data.connectionError ?? connection?.cache.error}</Flash></div>}
         {blocked && retryAt && <p className="cooldown" role="status">Checks available after {new Date(retryAt).toLocaleString()}. No automatic retries.</p>}
-        {checked && <div className="table-scroll center-table"><table><caption className="sr-only">Last verified endpoint access</caption>
+        {checked && <div className="table-scroll center-table wide-table" tabIndex={0} role="region" aria-label="Endpoint access checks"><table><caption className="sr-only">Last verified endpoint access</caption>
           <thead><tr><th scope="col">Capability</th><th scope="col">Status</th><th scope="col">Evidence</th></tr></thead>
           <tbody>{checked.checks.map(check => <tr key={check.key}><td>{labels[check.key] ?? check.key}</td><td><Label>{states[check.state] ?? 'Unknown'}</Label></td><td>{check.status && `HTTP ${check.status}. `}{check.message}{check.state !== 'accessible' && check.lastAccessibleAt && <p className="caption">Last accessible {new Date(check.lastAccessibleAt).toLocaleString()}; not confirmed now.</p>}</td></tr>)}</tbody>
         </table></div>}
-        <p className="caption">Billing access depends on enterprise roles, policies and endpoint support, not scope text alone. A successful empty usage report verifies access, not zero spend. Enterprise team checks use the authenticated account, not a bulk member roster, and require the new teams experience.</p>
-        <p className="caption">For enterprise teams, use a classic token with read:enterprise and enterprise owner or enterprise_teams:read permission; fine-grained PATs and GitHub App tokens are unsupported. An environment token cannot be elevated in place: replace it at its source or deliberately switch to authorized stored gh credentials. Stored gh credentials can be refreshed separately by the user. This page never changes authentication.</p>
+        <details className="section-details"><summary>Access requirements and credentials</summary>
+          <p>Billing access depends on enterprise roles, policies and endpoint support, not scope text alone. A successful empty usage report verifies access, not zero spend. Enterprise team checks use the authenticated account, not a bulk member roster, and require the new teams experience.</p>
+          <p>For enterprise teams, use a classic token with read:enterprise and enterprise owner or enterprise_teams:read permission; fine-grained PATs and GitHub App tokens are unsupported. An environment token cannot be elevated in place: replace it at its source or deliberately switch to authorized stored gh credentials. Stored gh credentials can be refreshed separately by the user. This page never changes authentication.</p>
+        </details>
       </section>
     </>}
   </main>;

@@ -12,30 +12,30 @@ type Center = {
 };
 const cap = (value: boolean | null | undefined) => value === true ? 'Enabled' : value === false ? 'Disabled' : 'Unknown';
 const valueLabel = (value: string | number | null | undefined) =>
-  value === undefined ? 'Not returned' : value === null ? 'Unavailable' : String(value);
+  value == null ? <span className="missing-value">{value === undefined ? 'Not reported' : 'Unavailable'}</span> : String(value);
 
 function Details({id, back, backLabel, openBudget}: {id: string; back: () => void; backLabel: string; openBudget: (id: string | null) => void}) {
   const state = useSnapshot<Center>(`cost-centers/${encodeURIComponent(id)}`);
   const center = state.snapshot?.data;
-  return <main>
+  return <main className="cost-centers cost-center-detail">
     <Button variant="invisible" onClick={back}>{backLabel}</Button>
-    <div className="overview-heading"><div><h2>{center?.name ?? 'Cost center configuration'}</h2><p className="muted">Read-only configuration and assigned resources.</p></div><RefreshButton state={state} /></div>
+    <div className="overview-heading"><div><h2>{center?.name ?? 'Cost center configuration'}</h2><p className="muted">Configuration and assigned resources.</p></div><RefreshButton state={state} /></div>
     <SnapshotStatus state={state} />
     {center && <div aria-busy={state.loading}>
-      <section className="budget-card config-details"><h3>Configuration</h3><dl>
-        <div><dt>Name</dt><dd>{center.name}</dd></div>
+      <section className="cost-center-configuration" aria-labelledby="center-configuration-title"><h3 id="center-configuration-title">Configuration</h3><dl className="center-facts">
         <div><dt>ID</dt><dd>{center.id}</dd></div>
         <div><dt>State</dt><dd>{valueLabel(center.state)}</dd></div>
         <div><dt>Azure subscription</dt><dd>{center.azureSubscription === null ? 'None configured' : valueLabel(center.azureSubscription)}</dd></div>
-        <div><dt>AI credit pool cap</dt><dd>{cap(center.aiCreditPoolEnabled)}</dd></div>
+        <div><dt>AI credit pool cap</dt><dd>{cap(center.aiCreditPoolEnabled)}
+          <p className="field-note">{center.aiCreditPoolEnabled === true ? 'Capped by member license entitlements.' : center.aiCreditPoolEnabled === false ? 'Usage draws from the shared enterprise pool.' : 'Pool cap configuration was not returned.'}</p>
+        </dd></div>
       </dl>
-      <p className="caption">{center.aiCreditPoolEnabled === true ? 'The cost center is capped at an amount derived from member license entitlements.' : center.aiCreditPoolEnabled === false ? 'No cost-center pool cap; usage draws from the shared enterprise pool.' : 'Pool cap configuration was not returned.'}</p>
-      <h3>AI credit pool state</h3>
-      {center.aiCreditPoolState ? <dl><div><dt>Target amount</dt><dd>{valueLabel(center.aiCreditPoolState.targetAmount)}</dd></div><div><dt>Current amount</dt><dd>{valueLabel(center.aiCreditPoolState.currentAmount)}</dd></div></dl> : <p className="muted">Pool state was not returned by the API.</p>}
+      {center.aiCreditPoolState ? <div className="center-pool-state"><h4>AI credit pool state</h4><dl className="center-facts"><div><dt>Target amount</dt><dd>{valueLabel(center.aiCreditPoolState.targetAmount)}</dd></div><div><dt>Current amount</dt><dd>{valueLabel(center.aiCreditPoolState.currentAmount)}</dd></div></dl></div> : <p className="field-note pool-unavailable">AI credit pool state was not returned by the API.</p>}
       </section>
       <RelatedBudgets centerId={center.id} relationships={state.snapshot?.relationships} open={openBudget} />
       <section className="resource-section"><h3>Assigned resources ({center.resources.length})</h3>
-        {center.resources.length ? <div className="table-scroll"><table><caption className="sr-only">All assigned cost center resources</caption><thead><tr><th scope="col">Type</th><th scope="col">Name</th></tr></thead><tbody>{center.resources.map(resource => <tr key={JSON.stringify([resource.type, resource.name])}><td>{resource.type}</td><td>{resource.name}</td></tr>)}</tbody></table></div> : <p className="muted">No assigned resources returned.</p>}
+        {center.resourcesComplete === false && <p className="resource-warning" role="status">Assignments are incomplete. The resources shown may not include every assignment.</p>}
+        {center.resources.length ? <div className="table-scroll"><table><caption className="sr-only">Assigned cost center resources</caption><thead><tr><th scope="col">Type</th><th scope="col">Name</th></tr></thead><tbody>{center.resources.map(resource => <tr key={JSON.stringify([resource.type, resource.name])}><td>{resource.type}</td><td>{resource.name}</td></tr>)}</tbody></table></div> : <p className="muted">No assigned resources returned.</p>}
       </section>
     </div>}
   </main>;
@@ -54,8 +54,8 @@ function CenterList({query, setQuery, page, setPage, select}: {
 }) {
   const state = useSnapshot<Center[]>('cost-centers');
   const result = paginateCenters(state.snapshot?.data ?? [], query, page);
-  return <main>
-    <div className="overview-heading"><div><div className="eyebrow">CONFIGURATION</div><h2>Cost Centers</h2><p className="muted">Search enterprise cost centers and inspect their configuration.</p></div><RefreshButton state={state} /></div>
+  return <main className="cost-centers">
+    <div className="overview-heading"><div><h2>Cost Centers</h2><p className="muted">Search enterprise cost centers and inspect their configuration.</p></div><RefreshButton state={state} /></div>
     <SnapshotStatus state={state} />
     {state.snapshot && <>
       <FormControl><FormControl.Label>Search by name, ID, or state</FormControl.Label><TextInput block value={query} onChange={event => setQuery(event.target.value)} placeholder="Search all cost centers" /></FormControl>

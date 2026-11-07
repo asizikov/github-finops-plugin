@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BaseStyles, ThemeProvider, Button, Label, Spinner, Flash} from '@primer/react';
-import {GraphIcon, OrganizationIcon, CreditCardIcon, PeopleIcon, GearIcon} from '@primer/octicons-react';
+import {CopilotIcon, GraphIcon, OrganizationIcon, CreditCardIcon, PeopleIcon, GearIcon} from '@primer/octicons-react';
 import '@primer/primitives/dist/css/functional/themes/light.css';
 import '@primer/primitives/dist/css/functional/themes/dark.css';
 import './style.css';
@@ -63,11 +63,10 @@ function BudgetCard({budget}: {budget: Budget}) {
     ? budget.consumed / budget.amount * 100 : null;
   return <section className="budget-card" aria-labelledby={`title-${budget.scope}`}>
     <div className="card-top">
-      <span className="eyebrow">{perUser ? 'MEMBER DEFAULT' : 'ENTERPRISE TOTAL'}</span>
+      <h3 id={`title-${budget.scope}`}>{perUser ? 'Default per-user budget' : 'Enterprise spending budget'}</h3>
       <Label>{budget.configured ? booleanLabel(budget.preventFurtherUsage, 'Hard stop',
         budget.alerts === true ? 'Alert only' : 'No hard stop') : 'Not configured'}</Label>
     </div>
-    <h3 id={`title-${budget.scope}`}>{perUser ? 'Default per-user budget' : 'Enterprise spending budget'}</h3>
     <p className="muted">{perUser ? 'The default AI Credits budget for each enterprise member.' : 'The enterprise-wide spending budget for AI Credits.'}</p>
     {!budget.configured ? <div className="unconfigured"><strong>No budget configured</strong><p className="muted">GitHub returned no matching AI Credits budget for this scope. This does not imply a zero budget.</p></div> : <>
       <div className="amount">{budget.amount == null ? 'Unavailable' : usd(budget.amount)} <span>USD{perUser ? ' / user' : ''}</span></div>
@@ -123,8 +122,7 @@ function OverviewPage({openBudget}: {openBudget: (id: string) => void}) {
     return minutes < 1 ? 'less than a minute old' : `${count} ${unit}${count === 1 ? '' : 's'} old`;
   };
   return <main>
-      <div className="overview-heading"><div><div className="eyebrow">OVERVIEW</div><h2>AI spending and budgets</h2><p className="muted">Track current spending and understand how limits are enforced.</p></div><Button onClick={() => void refresh(true)} disabled={loading || blocked}>{loading ? 'Refreshing...' : blocked ? 'Rate limited' : 'Refresh'}</Button></div>
-      <div className="notice">All amounts are in <strong>USD</strong>, not credit quantities. Enterprise and per-user budgets are separate controls.</div>
+      <div className="overview-heading"><div><h2>AI spending and budgets</h2><p className="muted">Track current spending and understand how limits are enforced.</p></div><Button onClick={() => void refresh(true)} disabled={loading || blocked}>{loading ? 'Refreshing...' : blocked ? 'Rate limited' : 'Refresh'}</Button></div>
       {error && <div className="error" role="alert"><Flash variant="danger">{error}{overview && ' Previously loaded values below may be stale.'}</Flash></div>}
       {overview && <div className="cache-status">
         <div><Label>{overview.cache.source === 'cached' ? 'Cached snapshot' : overview.cache.stale ? 'Partially refreshed' : 'Live snapshot'}</Label><span className="muted">Budgets: {age(overview.cache.budgetsAt)}{overview.cache.spendingAt ? ` / Spending: ${age(overview.cache.spendingAt)}` : ' / Spending not cached'}</span></div>
@@ -132,6 +130,7 @@ function OverviewPage({openBudget}: {openBudget: (id: string) => void}) {
         {overview.cache.error && <div className="error" role="alert"><Flash variant="danger">{overview.cache.error}</Flash></div>}
       </div>}
       {blocked && retryAt && <p className="cooldown" role="status">Refresh available after {new Date(retryAt).toLocaleString()}. No automatic retries.</p>}
+      <p className="section-intro">Amounts are in USD, not credit quantities. Enterprise and per-user budgets are separate controls.</p>
       {loading && !overview && <div className="loading" role="status"><Spinner size="medium" /><span>Reading enterprise spending and budgets...</span></div>}
       {overview && <div aria-busy={loading}><SpendingOverview spending={overview.spending} /><div className="cards">{overview.budgets.map(budget => <BudgetCard key={budget.scope} budget={budget} />)}</div><footer><span>Budgets last read {new Date(overview.cache.budgetsAt).toLocaleString()}{overview.cache.spendingAt && <> / Spending last read {new Date(overview.cache.spendingAt).toLocaleString()}</>}</span><span>Source: GitHub billing API / local SQLite</span></footer></div>}
       <AttentionQueue openBudget={openBudget} />
@@ -174,7 +173,7 @@ function App() {
     return () => observer.disconnect();
   }, []);
   return <ThemeProvider colorMode={dark ? 'night' : 'day'}><BaseStyles className="canvas-shell">
-    <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true">F</span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div><Label className="header-readonly">Read only</Label></header>
+    <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true"><CopilotIcon size={28} /></span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div></header>
     <div className={`app-layout${startup?.hasOverview ? '' : ' onboarding-layout'}`}>{startup?.hasOverview && <aside className="sidebar"><nav aria-label="Main navigation">{([
       {name: 'Overview', icon: GraphIcon}, {name: 'Cost Centers', icon: OrganizationIcon},
       {name: 'Budgets', icon: CreditCardIcon}, {name: 'Users', icon: PeopleIcon},

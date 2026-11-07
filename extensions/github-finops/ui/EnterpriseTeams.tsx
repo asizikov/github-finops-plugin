@@ -22,12 +22,12 @@ export default function EnterpriseTeams({data, cached, disabled, refresh, openCe
   const [selected, setSelected] = useState<string | null>(null);
   return <section className="resource-section" aria-labelledby="enterprise-teams-title">
     <h3 id="enterprise-teams-title">Enterprise teams</h3>
-    <p className="caption">Team membership and team cost center assignments do not select an effective user budget or prove which cost center pays for a request.</p>
+    <p className="section-intro">Team membership does not select an effective user budget or prove which cost center pays for a request.</p>
     {!data && <><p>Enterprise teams are not loaded in this saved lookup.</p><Button disabled={disabled} onClick={refresh}>Load enterprise teams</Button></>}
     {data?.error && <div className="error" role="alert"><Flash variant="danger">{data.error}</Flash></div>}
     {data?.fetchedAt && <p className="caption">Teams last read {new Date(data.fetchedAt).toLocaleString()}.{(cached || data.error) && ' Saved team membership may be stale.'}</p>}
     {data?.items && (data.items.length ? <div className="user-memberships">{data.items.map(team =>
-      <div className="notice" key={team.id}>
+      <div className="team-item" key={team.id}>
         <h4><a className="row-link" href={team.htmlUrl} target="_blank" rel="noreferrer">{team.name}</a></h4>
         <p className="caption">{team.slug} / Team ID {team.id}</p>
         <Button size="small" onClick={() => setSelected(selected === team.slug ? null : team.slug)} aria-expanded={selected === team.slug}>
@@ -36,6 +36,8 @@ export default function EnterpriseTeams({data, cached, disabled, refresh, openCe
         {selected === team.slug && <TeamCostCenters slug={team.slug} openCenter={openCenter} />}
       </div>)}</div> : <p className="empty-results">No enterprise teams returned in the last successful read.</p>)}
     {data?.items === null && <Button disabled={disabled} onClick={refresh}>Retry enterprise teams</Button>}
-    <p className="caption">Requires the new enterprise teams experience, a classic token with read:enterprise, and enterprise owner or enterprise_teams:read permission. Fine-grained tokens and GitHub App tokens are not supported by this endpoint.</p>
+    <details className="section-details"><summary>Enterprise team access requirements</summary>
+      <p>Requires the new enterprise teams experience, a classic token with read:enterprise, and enterprise owner or enterprise_teams:read permission. Fine-grained tokens and GitHub App tokens are not supported by this endpoint.</p>
+    </details>
   </section>;
 }

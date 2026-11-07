@@ -13,26 +13,30 @@ function Details({id, back, backLabel, openCenter}: {id: string; back: () => voi
   const budget = state.snapshot?.data;
   return <main>
     <Button variant="invisible" onClick={back}>{backLabel}</Button>
-    <div className="overview-heading"><div><h2>Budget configuration</h2><p className="muted">Read-only budget settings and reported consumption.</p></div><RefreshButton state={state} /></div>
+    <div className="overview-heading"><div><h2>{budget?.product ?? 'Budget configuration'}</h2><p className="muted">{budget ? `${scopeLabel(budget.scope)} budget settings and reported consumption.` : 'Budget settings and reported consumption.'}</p></div><RefreshButton state={state} /></div>
     <SnapshotStatus state={state} />
-    {budget && <section className="budget-card config-details" aria-busy={state.loading}><h3>{budget.product}</h3><dl>
+    {budget && <div aria-busy={state.loading}>
+      <section className="spending-section" aria-labelledby="budget-spending-title"><h3 id="budget-spending-title">Spending and limits</h3>
+        <div className="spending-metrics">
+          <div><span className="muted">Budget limit{perUser(budget)}</span><strong>{budgetAmount(budget.amount, budget)}</strong></div>
+          <div><span className="muted">Budget-tracked consumption</span><strong>{budgetAmount(budget.consumed, budget)}</strong></div>
+        </div>
+        {budget.scope.startsWith('multi_user_') && <p className="field-note">A per-user default, not an aggregate member spending budget. Missing consumption is unavailable.</p>}
+        {!budgetUnit(budget) && <p className="field-note">Units were not returned and this product has no supported unit mapping. No currency is assumed.</p>}
+        <p className="field-note">Consumption is not a finalized invoice. Budgets may overlap; do not sum them.</p>
+      </section>
+      <section className="budget-card config-details" aria-labelledby="budget-configuration-title"><h3 id="budget-configuration-title">Configuration</h3><dl>
       <div><dt>ID</dt><dd>{budget.id}</dd></div>
-      <div><dt>Product / SKU</dt><dd>{budget.product}</dd></div>
       <div><dt>Pricing type</dt><dd>{budget.type}</dd></div>
       <div><dt>Scope</dt><dd>{scopeLabel(budget.scope)}</dd></div>
       <div><dt>Entity</dt><dd><CostCenterLink budget={budget} relationships={state.snapshot?.relationships} open={openCenter} /></dd></div>
-      <div><dt>Budget limit</dt><dd>{budgetAmount(budget.amount, budget)}{perUser(budget)}</dd></div>
-      <div><dt>Budget-tracked consumption</dt><dd>{budgetAmount(budget.consumed, budget)}</dd></div>
       <div><dt>Enforcement</dt><dd>{enforcement(budget.preventFurtherUsage)}</dd></div>
       <div><dt>Alerts</dt><dd>{enabled(budget.alerts)}</dd></div>
-      <div><dt>Alert recipients</dt><dd>{budget.alertRecipients == null ? 'Not returned' : budget.alertRecipients.length ? budget.alertRecipients.join(', ') : 'None configured'}</dd></div>
-      <div><dt>Expiration</dt><dd>{budget.expiresAt === undefined ? 'Not returned' : budget.expiresAt || 'No expiration'}</dd></div>
+      <div><dt>Alert recipients</dt><dd>{budget.alertRecipients == null ? <span className="missing-value">Not reported</span> : budget.alertRecipients.length ? budget.alertRecipients.join(', ') : 'None configured'}</dd></div>
+      <div><dt>Expiration</dt><dd>{budget.expiresAt === undefined ? <span className="missing-value">Not reported</span> : budget.expiresAt || 'No expiration'}</dd></div>
       {budget.scope === 'enterprise' && <div><dt>Cost center usage</dt><dd>{budget.excludeCostCenters === true ? 'Excluded' : budget.excludeCostCenters === false ? 'Included' : 'Unknown'}</dd></div>}
     </dl>
-      {budget.scope.startsWith('multi_user_') && <p className="caption">This is a per-user default, not an aggregate member spending budget. Missing consumption is unavailable.</p>}
-      {!budgetUnit(budget) && <p className="caption">The API did not return units and this product is not in the supported unit mapping. No currency is assumed.</p>}
-      <p className="caption">Budget-tracked consumption is not a finalized invoice. Budgets may overlap; do not sum them.</p>
-    </section>}
+    </section></div>}
   </main>;
 }
 
@@ -53,11 +57,11 @@ function BudgetList({query, setQuery, page, setPage, select, openCenter, back, b
   const result = paginateBudgets(state.snapshot?.data ?? [], query, page);
   return <main>
     {back && <Button variant="invisible" onClick={back}>{backLabel}</Button>}
-    <div className="overview-heading"><div><div className="eyebrow">CONFIGURATION</div><h2>Budgets</h2><p className="muted">Search budgets across available enterprise scopes and products.</p></div><RefreshButton state={state} /></div>
+    <div className="overview-heading"><div><h2>Budgets</h2><p className="muted">Search budgets across available enterprise scopes and products.</p></div><RefreshButton state={state} /></div>
     <SnapshotStatus state={state} />
     {state.snapshot && <>
       <FormControl><FormControl.Label>Search by product, scope, entity, or ID</FormControl.Label><TextInput block value={query} onChange={event => setQuery(event.target.value)} placeholder="Search all budgets" /></FormControl>
-      <div className="table-scroll center-table" aria-busy={state.loading}><table>
+      <div className="table-scroll center-table budget-table" tabIndex={0} role="region" aria-label="Budget list" aria-busy={state.loading}><table>
         <caption className="sr-only">Budgets. Select a product or SKU to view configuration.</caption>
         <thead><tr><th scope="col">Product / SKU</th><th scope="col">Scope / entity</th><th scope="col">Limit</th><th scope="col">Consumption</th><th scope="col">Enforcement</th><th scope="col">Alerts</th></tr></thead>
         <tbody>{result.items.map(budget => <tr key={budget.id} onClick={() => select(budget.id)} className="clickable-row">
@@ -68,7 +72,7 @@ function BudgetList({query, setQuery, page, setPage, select, openCenter, back, b
         </tr>)}</tbody>
       </table>{result.total === 0 && <p className="empty-results">{query ? 'No budgets match this search.' : 'No budgets returned by GitHub.'}</p>}</div>
       <div className="pagination" aria-label="Budget pagination"><span role="status">Showing {result.start}-{result.end} of {result.total} results{query && ` (${state.snapshot.data.length} total)`}</span><div><Button disabled={result.page === 1} onClick={() => setPage(result.page - 1)}>Previous</Button><span>Page {result.page} of {result.pages}</span><Button disabled={result.page === result.pages} onClick={() => setPage(result.page + 1)}>Next</Button></div></div>
-      <p className="caption">Open a budget for detail consumption. Amounts use USD or license counts where documented; unsupported units remain explicit. Consumption is budget-tracked, not invoiced spending. Budgets may overlap.</p>
+      <p className="field-note section-note">Consumption is budget-tracked, not invoiced; budgets may overlap. Open a budget for detailed consumption and unit information.</p>
     </>}
   </main>;
 }

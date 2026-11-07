@@ -14,10 +14,10 @@ export default function UserBudgetExplanation({user, impact, openBudget}: Props)
   return <section className="spending-section user-effective" aria-labelledby="effective-budget-title">
     <h3 id="effective-budget-title">Effective per-user AI Credits budget</h3>
     {explanation.effective ? <>
-      <p><button className="row-link" type="button" onClick={() => openBudget(explanation.effective.id)}>
+      <p className="attribution-result"><button className="row-link" type="button" onClick={() => openBudget(explanation.effective.id)}>
         {scopeLabel(explanation.effective.budget.scope)}
       </button> <Label>Selected by GitHub for this user</Label></p>
-      <section className="notice" aria-label="Why this per-user limit">
+      <div className="effective-summary" role="group" aria-label="Why this per-user limit">
         <div className="spending-metrics">
           <div><span className="muted">Effective per-user limit</span><strong>{usd(explanation.effective.amount)}</strong></div>
           <div><span className="muted">Reported consumption</span><strong>{usd(explanation.effective.consumed)}</strong></div>
@@ -31,7 +31,7 @@ export default function UserBudgetExplanation({user, impact, openBudget}: Props)
         <p className="caption">{explanation.expiration
           ? `Expiration returned by GitHub: ${explanation.expiration}`
           : 'Expiration was not returned; expiry status is unknown.'}</p>
-      </section>
+      </div>
       {explanation.overridden.length > 0 && <p className="caption">
         Other per-user defaults shown as overridden are not the API-selected effective limit: {explanation.overridden.map(({budget}, index) =>
           <span key={budget.id}>{index > 0 ? ', ' : ''}<button className="row-link" type="button" onClick={() => openBudget(budget.id)}>
@@ -39,7 +39,9 @@ export default function UserBudgetExplanation({user, impact, openBudget}: Props)
           </button></span>)}.
       </p>}
     </> : <Flash>{explanation.reason} No zero limit, unlimited usage, or blocked status is inferred.</Flash>}
-    <p className="caption">This cap limits total AI Credits usage value, including covered usage, rather than net charges or a personal credit grant. Included pools and shared metered spending thresholds are separate.</p>
-    <p className="caption">Policies, billing organization, included credits, and pool state can affect usage. A configured hard stop or exhausted headroom is not proof that this user is currently blocked.</p>
+    <p className="field-note section-note">This cap limits total AI Credits usage value, including covered usage, not net charges or a personal credit grant.</p>
+    <details className="section-details"><summary>How to interpret this limit</summary>
+      <p>Included pools and shared metered spending thresholds are separate. Policies, billing organization, included credits, and pool state can affect usage. A configured hard stop or exhausted headroom is not proof that this user is currently blocked.</p>
+    </details>
   </section>;
 }
