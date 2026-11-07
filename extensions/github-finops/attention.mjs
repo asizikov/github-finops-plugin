@@ -41,7 +41,8 @@ export function buildAttentionQueue(budgets, now = Date.now()) {
     for (const budget of budgets) {
         const reasons = [];
         let percent = null;
-        const knownUsage = Boolean(budgetUnit(budget)) && validAmount(budget.amount) && validAmount(budget.consumed);
+        const knownUsage = !budget.scope.startsWith("multi_user_") && Boolean(budgetUnit(budget)) &&
+            validAmount(budget.amount) && validAmount(budget.consumed);
         if (knownUsage) {
             comparable++;
             if (budget.amount > 0) {
@@ -70,6 +71,49 @@ export function buildAttentionQueue(budgets, now = Date.now()) {
     rows.sort((a, b) => Number(b.severity === "critical") - Number(a.severity === "critical") ||
         a.budget.id.localeCompare(b.budget.id));
     return {rows, coverage: {total: budgets.length, comparable, unavailable: budgets.length - comparable}};
+}
+
+export function buildUniversalAttention(data, now = Date.now()) {
+    const rows = [];
+    let comparable = 0;
+    const controls = new Map(data.budgets.filter(budget => budget.scope === "multi_user_customer").map(budget => [budget.id, budget]));
+    const allBudgets = new Map(data.budgets.map(budget => [budget.id, budget]));
+    const seen = new Set();
+    for (const state of data.states) {
+        const control = controls.get(state.budgetId);
+        const key = `${state.budgetId}:${state.user?.toLowerCase()}`;
+        if (!control || !state.user || seen.has(key)) continue;
+        seen.add(key);
+        const override = allBudgets.get(state.overrideBudgetId);
+        const expired = override?.expiresAt && Number.isFinite(Date.parse(override.expiresAt)) &&
+            Date.parse(override.expiresAt.length === 10 ? `${override.expiresAt}T23:59:59.999Z` : override.expiresAt) < new Date(now).getTime();
+        const knownTarget = validAmount(state.target) && !expired;
+        const limit = knownTarget ? state.target : control.amount;
+        if (!budgetUnit(control) || !validAmount(state.consumed) || !validAmount(limit)) continue;
+        if (knownTarget) comparable++;
+        if (state.consumed < limit * 0.9) continue;
+        const universal = knownTarget && !state.overrideBudgetId && state.target === control.amount;
+        const severity = knownTarget && state.consumed >= limit ? "critical" : "warning";
+        const percent = limit > 0 ? state.consumed / limit * 100 : null;
+        rows.push({
+            budget: {...control, consumed: state.consumed, amount: limit, user: state.user, expiresAt: override?.expiresAt},
+            user: state.user, key, universalAmount: control.amount, targetAmount: state.target,
+            overrideBudgetId: state.overrideBudgetId,
+            applicability: expired ? "Saved override has expired; refresh to resolve the current limit." :
+                !knownTarget ? "Reported target unavailable; universal baseline only, applicability unverified." :
+                universal ? "Reported per-user target matches the universal baseline; no override ID returned." :
+                state.overrideBudgetId ? "Reported per-user target with an override; not the universal cap." :
+                "Reported per-user target differs from the universal baseline; more-specific control may apply.",
+            limitLabel: knownTarget ? "Reported per-user target" : "Universal baseline (not a confirmed limit)",
+            reasons: [{code: knownTarget ? state.consumed >= limit ? "exhausted" : "near-limit" : "baseline-near-limit",
+                severity, label: knownTarget ? state.consumed >= limit ? "Per-user target reached" : "Near per-user target (at least 90%)" :
+                    "At least 90% of universal baseline; current target unknown"},
+                ...(expirationDays(override?.expiresAt, now) !== null ? [{code: "override-expiring", severity: "warning",
+                    label: "Individual override expires within 7 UTC days"}] : [])],
+            percent: Number.isFinite(percent) ? percent : null, severity,
+        });
+    }
+    return {rows, coverage: {total: data.states.length, comparable, unavailable: data.states.length - comparable}};
 }
 
 export function paginateAttention(rows, scope, product, page) {

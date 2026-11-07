@@ -13,8 +13,9 @@ import {loadUser} from "./users.mjs";
 import {normalizeUsername} from "./ui/user-format.mjs";
 import {loadTeamCostCenters, validateTeamSlug} from "./enterprise-teams.mjs";
 import {loadConnection} from "./settings.mjs";
+import {loadUniversalUsers} from "./universal-users.mjs";
 
-const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail", "user", "team-cost-centers", "connection"];
+const configurationResources = ["cost-centers", "cost-center-detail", "budgets", "budget-detail", "user", "team-cost-centers", "connection", "universal-users"];
 
 class CacheClearedError extends Error {
     constructor() {
@@ -277,7 +278,7 @@ export class OverviewCache {
         const now = this.clock();
         const scope = resource === "overview"
             ? [now.getUTCFullYear(), now.getUTCMonth() + 1] : [resource, id ?? null];
-        if (resource === "budgets" || resource === "budget-detail" || resource === "user") {
+        if (resource === "budgets" || resource === "budget-detail" || resource === "user" || resource === "universal-users") {
             scope.push(now.getUTCFullYear(), now.getUTCMonth() + 1);
         }
         const key = cacheKey(scope);
@@ -325,6 +326,7 @@ export class OverviewCache {
         let live;
         try {
             live = resource === "overview" ? await this.load(config, read, now)
+                : resource === "universal-users" ? await loadUniversalUsers(config, read, now)
                 : resource === "user" ? await loadUser(config, read, id, now)
                 : resource === "team-cost-centers" ? await loadTeamCostCenters(config, read, id)
                 : resource === "connection" ? await loadConnection(config, read, now)

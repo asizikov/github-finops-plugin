@@ -202,11 +202,13 @@ export async function startServer(input, load = cachedOverview, {
         const userRoute = route?.match(/^users\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,99})(\?refresh=1)?$/);
         const teamRoute = route?.match(/^team-cost-centers\/((?:ent(?::|%3[Aa]))?[a-zA-Z0-9][a-zA-Z0-9_-]*)(\?refresh=1)?$/);
         const attentionRoute = route === "attention";
-        if (route === "overview" || route === "overview?refresh=1" || centerRoute || budgetRoute || userRoute || teamRoute || attentionRoute) {
+        const universalRoute = route === "universal-users" || route === "universal-users?refresh=1";
+        if (route === "overview" || route === "overview?refresh=1" || centerRoute || budgetRoute || userRoute || teamRoute || attentionRoute || universalRoute) {
             res.setHeader("Content-Type", "application/json");
             try {
                 const options = { refresh: route.endsWith("?refresh=1") };
                 if (attentionRoute) {options.resource = "budgets";options.cacheOnly = true;}
+                if (universalRoute) {options.resource = "universal-users";options.cacheOnly = !options.refresh;}
                 if (centerRoute) {
                     options.resource = centerRoute[1] ? "cost-center-detail" : "cost-centers";
                     if (centerRoute[1]) options.id = centerRoute[1];

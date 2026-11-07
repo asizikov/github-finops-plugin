@@ -128,6 +128,7 @@ details p { margin-top: 8px; }
 .section-note { margin-top: 16px; }
 .filter-bar { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin: 24px 0 16px; }
 .attention-section { border-top: 1px solid var(--borderColor-muted); margin-top: 32px; padding-top: 32px; }
+.attention-section .action-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .settings-section { margin-bottom: 24px; }
 .settings-section h3 { margin-top: 0; }
 .settings-section { --fact-label-width: 180px; }
