@@ -241,6 +241,8 @@ The canvas checks the public repository's
 [`main/VERSION`](https://raw.githubusercontent.com/asizikov/github-finops-plugin/main/VERSION)
 on open and every 15 minutes while open. Checks are backend-only, unauthenticated,
 limited to 5 seconds and 200 bytes, and never send enterprise data or credentials.
+The next poll is scheduled 15 minutes after the previous check finishes, avoiding
+overlapping requests or arriving just before the backend cooldown expires.
 Successful and failed attempts are cached for 15 minutes in user-local
 `$COPILOT_HOME/extensions/github-finops/artifacts/updates.json` (default
 `~/.copilot`), separate from billing/authentication caches. Settings shows the

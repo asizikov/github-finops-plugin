@@ -1,5 +1,6 @@
 import {useEffect, useState} from 'react';
 import {Button, Link} from '@primer/react';
+import {pollUpdates} from './update-polling.mjs';
 
 export type UpdateStatus = {
   installed: string; latest: string | null; checkedAt: number | null;
@@ -11,22 +12,16 @@ export function usePluginUpdates() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    async function check() {
-      try {
-        const response = await fetch('./updates', {signal: controller.signal, cache: 'no-store'});
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error ?? 'Could not read plugin update status.');
-        if (!controller.signal.aborted) {setStatus(result);setError(null);}
-      } catch (cause) {
-        if (!controller.signal.aborted) {
-          console.error('Plugin update status:', cause);
-          setError('Could not read plugin update status. Reload the canvas to retry.');
-        }
-      }
-    }
-    void check();
-    const timer = setInterval(() => void check(), 15 * 60 * 1000);
-    return () => {controller.abort();clearInterval(timer);};
+    const stop = pollUpdates(async () => {
+      const response = await fetch('./updates', {signal: controller.signal, cache: 'no-store'});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? 'Could not read plugin update status.');
+      if (!controller.signal.aborted) {setStatus(result);setError(null);}
+    }, cause => {
+      console.error('Plugin update status:', cause);
+      setError('Could not read plugin update status. Reload the canvas to retry.');
+    });
+    return () => {stop();controller.abort();};
   }, []);
   return {status, setStatus, error};
 }
