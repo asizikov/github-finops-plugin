@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react';
-import {Button, Flash, Label, Spinner} from '@primer/react';
+import {Button, Flash, Label, Link, Spinner} from '@primer/react';
 import CacheControls from './CacheControls';
+import type {UpdateStatus} from './UpdateReminder';
 
 type Check = {key: string; state: string; status: number | null; message: string; lastAccessibleAt?: string | null};
 type Connection = {
@@ -21,7 +22,9 @@ export const states: Record<string,string> = {
   unavailable: 'Unavailable / unsupported', rate_limited: 'Rate limited', unknown: 'Unknown', not_checked: 'Not checked',
 };
 
-export default function Settings({cleared}: {cleared: () => void}) {
+export default function Settings({cleared, updates, updateError}: {
+  cleared: () => void; updates: UpdateStatus | null; updateError: string | null;
+}) {
   const [data,setData] = useState<SettingsData | null>(null);
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState<string | null>(null);
@@ -67,6 +70,11 @@ export default function Settings({cleared}: {cleared: () => void}) {
           <div><dt>Development revision</dt><dd>{data.version.revision ? <>{data.version.revision}{data.version.dirty === true ? ' (uncommitted changes)' : data.version.dirty === false ? ' (clean)' : ' (working tree status unknown)'}</> : 'Unavailable in this distribution'}</dd></div>
           <div><dt>Local SQLite database</dt><dd className="database-location"><code>{data.database}</code><Button size="small" disabled={opening} onClick={() => void openDatabase()}>{opening ? 'Opening...' : 'Open'}</Button></dd></div>
         </dl>
+        <p className="caption">{updateError ?? updates?.error ?? (updates?.checkedAt ?
+          `Public version last checked ${new Date(updates.checkedAt).toLocaleString()}. Latest published: ${updates.latest}.` :
+          'Public version check pending.')}
+          {updates && <> <Link href={updates.updateUrl} target="_blank" rel="noreferrer">How to update</Link></>}
+        </p>
         {openError && <div className="error" role="alert"><Flash variant="danger">{openError}</Flash></div>}
         {openMessage && <p className="caption" role="status">{openMessage}</p>}
       </section>

@@ -57,9 +57,9 @@ test("cache routes require explicit same-origin scoped confirmation and never cl
     assert.deepEqual(await (await post("fixture-context")).json(),{cleared:true});
 });
 
-test("runtime version comes from the manifest and reports only the checkout's actual revision/status", async t => {
+test("runtime version comes from VERSION and reports only the checkout's actual revision/status", async t => {
     const directory = temporary(t);
-    writeFileSync(join(directory,"package.json"),JSON.stringify({version:"1.2.3-beta.1"}));
+    writeFileSync(join(directory,"VERSION"),"1.2.3-beta.1\n");
     const calls = [];
     const result = await versionInfo({directory,run:async (command,args) => {
         calls.push([command,args]);
@@ -73,7 +73,7 @@ test("runtime version comes from the manifest and reports only the checkout's ac
     assert.deepEqual(await versionInfo({directory,run:async () => ({stdout:resolve(directory,"..")})}),
         {version:"1.2.3-beta.1",revision:null,dirty:null});
     await assert.rejects(versionInfo({directory,run:async () => {throw Object.assign(new Error("Git denied"),{code:"EACCES"});}}),/Git denied/);
-    writeFileSync(join(directory,"package.json"),JSON.stringify({version:"not-a-version"}));
+    writeFileSync(join(directory,"VERSION"),"not-a-version");
     await assert.rejects(versionInfo({directory}),/version is invalid/);
 });
 
@@ -89,6 +89,9 @@ test("npm version lifecycle synchronizes plugin/package/lock without embedding a
     assert.equal(read("plugin.json").version,read("package.json").version);
     assert.equal(read("package-lock.json").version,read("package.json").version);
     assert.equal(read("package-lock.json").packages[""].version,read("package.json").version);
+    assert.equal(readFileSync(join(directory,"VERSION"),"utf8").trim(),read("package.json").version);
+    assert.equal(readFileSync(new URL("../../VERSION",import.meta.url),"utf8").trim(),
+        JSON.parse(readFileSync(new URL("../../package.json",import.meta.url),"utf8")).version);
     for (const name of ["package.json","plugin.json","package-lock.json"]) {
         const production = JSON.parse(readFileSync(new URL(`../../${name}`,import.meta.url),"utf8"));
         assert.equal(production.version,JSON.parse(readFileSync(new URL("../../package.json",import.meta.url),"utf8")).version);

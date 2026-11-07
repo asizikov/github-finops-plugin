@@ -1,17 +1,14 @@
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {readFile} from "node:fs/promises";
 import {dirname, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
+import {installedVersion} from "./updates.mjs";
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
 export async function versionInfo({directory = root, run = exec} = {}) {
-    const manifest = JSON.parse(await readFile(resolve(directory, "package.json"), "utf8"));
-    if (typeof manifest.version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(manifest.version)) {
-        throw new Error("The plugin version is invalid.");
-    }
+    const version = await installedVersion(resolve(directory, "VERSION"));
     let revision = null;
     let dirty = null;
     try {
@@ -27,7 +24,7 @@ export async function versionInfo({directory = root, run = exec} = {}) {
     } catch (error) {
         if (!["ENOENT", 128].includes(error.code)) throw error;
     }
-    return {version: manifest.version, revision, dirty};
+    return {version, revision, dirty};
 }
 
 export function authSource(host, env = process.env) {
