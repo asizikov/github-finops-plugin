@@ -161,7 +161,15 @@ products, fetching every list page without a scope filter. Search covers the
 full list by product/SKU, pricing type, scope, entity, expiration, or ID.
 Visible pages contain at most 25 rows. Selecting a product opens its read-only
 configuration, reported consumption, alerts, enforcement, and optional expiration.
-Back navigation preserves the search and page.
+Back navigation preserves the search, SKU filter and page.
+
+The SKU filter is separate from search and lists only product/SKU values present
+in the loaded budgets, with known names beside the raw SKU. Changing it returns
+to page 1. The choice is saved per host and enterprise in user-local
+`preferences/` beside the cache (one small file per target, no credentials), so
+it survives canvas reloads and new loopback ports. A saved SKU missing from the
+current list shows all SKUs with a notice and stays saved until another choice;
+unreadable or malformed preference files are reported and never overwritten.
 
 Lists and details use the same persistent SQLite caching and manual refresh as
 cost centers, with independent resource/ID keys and shared rate-limit cooldown.
@@ -235,6 +243,14 @@ do not establish that no related budgets exist.
 Cost center details link to related budgets; budget lists and details link back
 to resolved cost centers. In-app back navigation preserves the originating
 detail view and each list's search and page.
+
+Organizations, repositories (`owner/repo`) and enterprise teams link to GitHub on
+the configured host and are marked with an external-link icon and "opens on
+GitHub in your browser" text. Enterprise teams use
+`/enterprises/{enterprise}/teams/{slug}` (or a validated API `html_url`), never
+an organization team path. Users open the in-app Users page with back
+navigation instead of a GitHub profile. Malformed or incomplete names, cost
+center names and IDs are shown as plain text rather than guessed links.
 
 ## User lookup
 

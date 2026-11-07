@@ -2,6 +2,7 @@ import {Flash, Label} from '@primer/react';
 import type {UserData} from './user-format.mjs';
 import type {RelationshipsData} from './Relationships';
 import {scopeLabel} from './budget-format.mjs';
+import {TeamLink} from './ResourceLinks';
 
 type Props = {user: UserData; relationships?: RelationshipsData; cached: boolean;
   openCenter: (id: string) => void; openBudget: (id: string) => void};
@@ -37,7 +38,7 @@ export default function UserAttribution({user, relationships, cached, openCenter
     <details className="section-details"><summary>Alternative memberships and evidence</summary>
       {attribution.alternatives.length ? attribution.alternatives.map((item, index) => <div className="evidence-item" key={index}>
         <p><strong>{item.method === 'direct' ? 'User membership check' : methodLabel(item.method)}</strong>{' / '}
-          {item.htmlUrl ? <a href={item.htmlUrl} target="_blank" rel="noreferrer">{item.name}</a> : item.name}
+          <TeamLink htmlUrl={item.htmlUrl}>{item.name}</TeamLink>
           {item.center && <button className="row-link" type="button" onClick={() => openCenter(item.center!.id)}>{item.center.name}</button>}
         </p>
         {item.centers?.map(candidate => <p key={candidate.id}><button className="row-link" type="button" onClick={() => openCenter(candidate.id)}>{candidate.name}</button></p>)}

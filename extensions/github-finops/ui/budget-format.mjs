@@ -34,9 +34,35 @@ export function budgetAmount(value, budget) {
         : `${new Intl.NumberFormat().format(value)} ${unit ?? "(unit not returned)"}`;
 }
 
-export function paginateBudgets(budgets, query, requestedPage) {
+const SKU_LABELS = {
+    ai_credits: "AI Credits", actions: "Actions", packages: "Packages", codespaces: "Codespaces",
+    git_lfs: "Git LFS", models: "GitHub Models", spark: "Spark", sandbox: "Sandbox",
+    ghec: "GitHub Enterprise Cloud", ghec_licenses: "GitHub Enterprise Cloud licenses",
+    ghas_licenses: "Advanced Security licenses", ghas_code_security_licenses: "Code Security licenses",
+    ghas_secret_protection_licenses: "Secret Protection licenses", code_quality_licenses: "Code Quality licenses",
+    copilot_for_business: "Copilot Business", copilot_enterprise: "Copilot Enterprise",
+    copilot_standalone: "Copilot standalone", premium_requests: "Premium requests",
+    copilot_ai_credit: "Copilot AI credits", coding_agent_ai_credit: "Coding agent AI credits",
+    code_quality_ai_credit: "Code Quality AI credits", spark_ai_credits: "Spark AI credits",
+    code_security_ai_unit: "Code Security AI units", deep_security_research_ai_unit: "Deep security research AI units",
+    secret_protection_ai_unit: "Secret Protection AI units",
+};
+
+export function skuLabel(sku) {
+    const key = sku.toLowerCase();
+    return Object.hasOwn(SKU_LABELS, key) ? SKU_LABELS[key] : null;
+}
+
+export function budgetSkuOptions(budgets) {
+    const counts = new Map();
+    for (const budget of budgets) counts.set(budget.product, (counts.get(budget.product) ?? 0) + 1);
+    return [...counts].map(([sku, count]) => ({sku, label: skuLabel(sku), count}))
+        .sort((a, b) => (a.label ?? a.sku).localeCompare(b.label ?? b.sku) || a.sku.localeCompare(b.sku));
+}
+
+export function paginateBudgets(budgets, query, requestedPage, sku = null) {
     const search = query.trim().toLowerCase();
-    const filtered = budgets.filter(budget => [budget.id, budget.product, budget.type, scopeLabel(budget.scope),
+    const filtered = budgets.filter(budget => (sku === null || budget.product === sku) && [budget.id, budget.product, budget.type, scopeLabel(budget.scope),
         budget.scope, budgetEntity(budget), budget.expiresAt ?? ""].some(value => value.toLowerCase().includes(search)));
     return paginateItems(filtered, requestedPage);
 }

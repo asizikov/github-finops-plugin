@@ -6,7 +6,8 @@ import '@primer/primitives/dist/css/functional/themes/light.css';
 import '@primer/primitives/dist/css/functional/themes/dark.css';
 import './style.css';
 import CostCenters from './CostCenters';
-import Budgets from './Budgets';
+import Budgets, {useBudgetSkuFilter} from './Budgets';
+import {ResourceLinksProvider} from './ResourceLinks';
 import Users, {type UserLookup} from './Users';
 import Settings from './Settings';
 import Onboarding, {type Startup} from './Onboarding';
@@ -170,11 +171,17 @@ function App() {
   const [centerList, setCenterList] = useState<ListState>({query:'',page:1});
   const [budgetList, setBudgetList] = useState<ListState>({query:'',page:1});
   const [userLookup,setUserLookup] = useState<UserLookup>({query:'',login:null});
+  const skuFilter = useBudgetSkuFilter(Boolean(startup?.hasOverview));
   const route = history[history.length - 1];
   const page = route.page;
-  const open = (route: Route) => setHistory(history => [...history,route]);
-  const openUser = (login: string) => {setUserLookup({query:login,login}); open({page:'Users',id:login});};
-  const back = () => setHistory(history => history.length > 1 ? history.slice(0,-1) : [{page}]);
+  // A Users route with an id is a linked user; restore its lookup whenever that route becomes current.
+  const showRoute = (route: Route) => {if (route.page === 'Users' && route.id) setUserLookup({query:route.id,login:route.id});};
+  const open = (route: Route) => {showRoute(route);setHistory(history => [...history,route]);};
+  const back = () => {
+    if (history.length > 1) showRoute(history[history.length - 2]);
+    setHistory(history => history.length > 1 ? history.slice(0,-1) : [{page}]);
+  };
+  const openUser = (login: string) => open({page:'Users',id:login});
   const backLabel = `Back to ${history[history.length - 2]?.page ?? page}`;
   const [dark, setDark] = useState(document.documentElement.dataset.colorMode === 'dark');
   useEffect(() => {
@@ -184,7 +191,8 @@ function App() {
     observer.observe(document.body, {attributes: true, attributeFilter: ['data-color-mode']});
     return () => observer.disconnect();
   }, []);
-  return <ThemeProvider colorMode={dark ? 'night' : 'day'}><BaseStyles className="canvas-shell">
+  const links = {host: startup?.target?.host ?? null, enterprise: startup?.target?.enterprise ?? null, openUser};
+  return <ThemeProvider colorMode={dark ? 'night' : 'day'}><ResourceLinksProvider value={links}><BaseStyles className="canvas-shell">
     <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true"><CopilotIcon size={28} /></span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div></header>
     <div className={`app-layout${startup?.hasOverview ? '' : ' onboarding-layout'}`}>{startup?.hasOverview && <aside className="sidebar"><nav aria-label="Main navigation">{([
       {name: 'Overview', icon: GraphIcon}, {name: 'Cost Centers', icon: OrganizationIcon},
@@ -193,18 +201,19 @@ function App() {
     ] satisfies {name: Page; icon: typeof GraphIcon}[]).map(item => <Button key={item.name} block variant="invisible" alignContent="start" leadingVisual={item.icon} aria-current={page === item.name ? 'page' : undefined} onClick={() => setHistory([{page:item.name}])}>{item.name}</Button>)}</nav></aside>}
       <div className="page-scroll" tabIndex={0} role="region" aria-label={startup?.hasOverview ? `${page} page content` : 'Connect your enterprise'} key={`${startup?.hasOverview}-${page}-${route.id ?? ''}`}>
       {!startup ? <main><h2>GitHub FinOps</h2><p role="status">Reading local startup information...</p></main> : !startup.hasOverview ?
-        <Onboarding startup={startup} connected={() => setStartup({...startup,hasOverview:true})} /> :
+        <Onboarding startup={startup} connected={target => setStartup({...startup,target:target ?? startup.target,hasOverview:true})} /> :
       page === 'Overview' ? <OverviewPage openBudget={id => open({page:'Budgets',id})} openUser={openUser} /> : page === 'Settings' ? <Settings updates={updates.status} updateError={updates.error} cleared={() => {
         setUserLookup({query:'',login:null});setCenterList({query:'',page:1});setBudgetList({query:'',page:1});
         setHistory([{page:'Overview'}]);setStartup({...startup,hasOverview:false,error:null});
       }} /> : page === 'Cost Centers' ?
         <CostCenters selected={route.id} list={centerList} setList={setCenterList} select={id => open({page:'Cost Centers',id})} back={back} backLabel={backLabel} openBudget={id => open({page:'Budgets',...(id ? {id} : {})})} /> :
-        page === 'Budgets' ? <Budgets selected={route.id} list={budgetList} setList={setBudgetList} select={id => open({page:'Budgets',id})} back={back} backLabel={backLabel} canGoBack={history.length > 1} openCenter={id => open({page:'Cost Centers',id})} /> :
-        <>{history.length > 1 && <Button onClick={back}>{backLabel}</Button>}<Users lookup={userLookup} setLookup={setUserLookup} openCenter={id => open({page:'Cost Centers',id})} openBudget={id => open({page:'Budgets',id})} /></>}
+        page === 'Budgets' ? <Budgets selected={route.id} list={budgetList} setList={setBudgetList} skuFilter={skuFilter} select={id => open({page:'Budgets',id})} back={back} backLabel={backLabel} canGoBack={history.length > 1} openCenter={id => open({page:'Cost Centers',id})} /> :
+        <Users lookup={userLookup} setLookup={setUserLookup} openCenter={id => open({page:'Cost Centers',id})} openBudget={id => open({page:'Budgets',id})}
+          {...(history.length > 1 ? {back, backLabel} : {})} />}
       </div>
     </div>
     <UpdateReminder status={updates.error ? null : updates.status} changed={updates.setStatus} />
-  </BaseStyles></ThemeProvider>;
+  </BaseStyles></ResourceLinksProvider></ThemeProvider>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

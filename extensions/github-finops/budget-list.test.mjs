@@ -1,7 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {loadBudgets, normalizeBudgetRecord} from "./budget-list.mjs";
-import {budgetAmount, budgetEntity, budgetUnit, paginateBudgets, scopeLabel} from "./ui/budget-format.mjs";
+import {budgetAmount, budgetEntity, budgetSkuOptions, budgetUnit, paginateBudgets, scopeLabel} from "./ui/budget-format.mjs";
 
 const config = {enterprise: "example-enterprise", host: "github.com"};
 const raw = (fields = {}) => ({
@@ -80,4 +80,25 @@ test("budget pagination clamps after search, empty lists and 25-row boundaries",
         assert.equal(last.page, Math.max(1,Math.ceil(size/25)));
         assert.equal(paginateBudgets(rows, "no match", 999).page, 1);
     }
+});
+
+test("SKU filter options come from normalized records and filtering composes with search and clamps pages", () => {
+    const rows = [
+        ...Array.from({length:30}, (_,i) => normalizeBudgetRecord(raw({id:`actions-${i}`}))),
+        ...Array.from({length:3}, (_,i) => normalizeBudgetRecord(raw({id:`credits-${i}`,budget_type:"BundlePricing",budget_product_sku:"ai_credits"}))),
+        normalizeBudgetRecord(raw({id:"mystery",budget_type:"SkuPricing",budget_product_sku:"zz_new_sku"})),
+    ];
+    assert.deepEqual(budgetSkuOptions(rows), [
+        {sku:"actions",label:"Actions",count:30},
+        {sku:"ai_credits",label:"AI Credits",count:3},
+        {sku:"zz_new_sku",label:null,count:1},
+    ]);
+    assert.equal(paginateBudgets(rows, "", 2).total, 34);
+    const credits = paginateBudgets(rows, "", 2, "ai_credits");
+    assert.deepEqual([credits.total, credits.page, credits.pages], [3, 1, 1]);
+    assert.ok(credits.items.every(budget => budget.product === "ai_credits"));
+    assert.equal(paginateBudgets(rows, "credits-1", 1, "ai_credits").total, 1);
+    assert.equal(paginateBudgets(rows, "credits-1", 1, "actions").total, 0);
+    assert.equal(paginateBudgets(rows, "", 1, "removed_sku").total, 0);
+    assert.deepEqual(budgetSkuOptions([]), []);
 });

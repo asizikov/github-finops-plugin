@@ -1,5 +1,6 @@
 import {Flash, Label} from '@primer/react';
-import {budgetAmount, budgetEntity, scopeLabel, type BudgetRecord} from './budget-format.mjs';
+import {budgetAmount, scopeLabel, type BudgetRecord} from './budget-format.mjs';
+import {BudgetEntity} from './ResourceLinks';
 
 type Coverage = {fetchedAt: string; error: string | null} | null;
 export type RelationshipsData = {
@@ -15,7 +16,7 @@ const matchLabel = (method: string) => method === 'id' ? 'Matched by ID' : 'Exac
 export function CostCenterLink({budget, relationships, open}: {
   budget: BudgetRecord; relationships?: RelationshipsData; open: (id: string) => void;
 }) {
-  if (!['cost_center', 'multi_user_cost_center'].includes(budget.scope)) return <>{budgetEntity(budget)}</>;
+  if (!['cost_center', 'multi_user_cost_center'].includes(budget.scope)) return <BudgetEntity budget={budget} />;
   const link = relationships?.links.find(link => link.budgetId === budget.id);
   const center = relationships?.centers.find(center => center.id === link?.centerId);
   const reason = relationships?.unresolved.find(item => item.budgetId === budget.id)?.reason;
@@ -23,7 +24,7 @@ export function CostCenterLink({budget, relationships, open}: {
     <button className="row-link" type="button" onClick={event => {event.stopPropagation();open(center.id);}}>{center.name}</button>
     <span className="relationship-note">{matchLabel(link.matchedBy)} / center saved {new Date(center.fetchedAt).toLocaleString()}; may be stale.</span>
   </> : <>
-    {budgetEntity(budget)}
+    <BudgetEntity budget={budget} />
     <span className="relationship-note">{reason === 'ambiguous_name' ? 'Unresolved: duplicate cost center names.' :
       reason === 'entity_unavailable' ? 'Unresolved: no entity returned.' :
       !relationships?.lists.centers ? 'Cost center list not loaded; relationship unresolved.' :
