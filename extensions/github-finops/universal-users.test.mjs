@@ -83,6 +83,12 @@ test("reported override and cost-center targets, not the universal denominator, 
     assert.match(uncertain.rows[0].applicability,/conflicts/);
     assert.equal(uncertain.rows[0].severity,"warning");
     assert.equal(uncertain.coverage.comparable,0);
+    const unselected = buildUniversalAttention(data([state({consumed:100,target:100})],[control,conflicting]),now);
+    assert.match(unselected.rows[0].applicability,/conflicts/);
+    assert.equal(unselected.rows[0].severity,"warning");
+    const ambiguous = buildUniversalAttention(data([state({consumed:100})],[control,conflicting,{...conflicting,id:"other-override"}]),now);
+    assert.match(ambiguous.rows[0].applicability,/Multiple/);
+    assert.equal(ambiguous.rows[0].severity,"warning");
 });
 
 test("deduplication keeps different control and SKU risks for the same user", () => {

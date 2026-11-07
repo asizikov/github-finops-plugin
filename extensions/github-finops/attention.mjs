@@ -78,24 +78,32 @@ export function buildUniversalAttention(data, now = Date.now()) {
     let comparable = 0;
     const controls = new Map(data.budgets.filter(budget => budget.scope === "multi_user_customer").map(budget => [budget.id, budget]));
     const allBudgets = new Map(data.budgets.map(budget => [budget.id, budget]));
+    const individualBudgets = new Map();
+    for (const budget of data.budgets.filter(budget => budget.scope === "user" && budget.user)) {
+        const key = JSON.stringify([budget.type, budget.product, budget.user.toLowerCase()]);
+        individualBudgets.set(key, [...(individualBudgets.get(key) ?? []), budget]);
+    }
     const seen = new Set();
     for (const state of data.states) {
         const control = controls.get(state.budgetId);
         const key = `${state.budgetId}:${state.user?.toLowerCase()}`;
         if (!control || !state.user || seen.has(key)) continue;
         seen.add(key);
-        const override = allBudgets.get(state.overrideBudgetId);
+        const individuals = individualBudgets.get(JSON.stringify([control.type, control.product, state.user.toLowerCase()])) ?? [];
+        const ambiguous = !state.overrideBudgetId && individuals.length > 1;
+        const override = state.overrideBudgetId ? allBudgets.get(state.overrideBudgetId) : individuals.length === 1 ? individuals[0] : null;
         const expired = override?.expiresAt && Number.isFinite(Date.parse(override.expiresAt)) &&
             Date.parse(override.expiresAt.length === 10 ? `${override.expiresAt}T23:59:59.999Z` : override.expiresAt) < new Date(now).getTime();
-        const conflict = override?.scope === "user" && override.user?.toLowerCase() === state.user.toLowerCase() &&
+        const conflict = ((override?.scope === "user" && override.user?.toLowerCase() === state.user.toLowerCase()) ||
+            override?.scope === "multi_user_cost_center") &&
             override.type === control.type && override.product === control.product &&
             validAmount(override.amount) && validAmount(state.target) && override.amount !== state.target;
-        const knownTarget = validAmount(state.target) && !expired && !conflict;
+        const knownTarget = validAmount(state.target) && !expired && !conflict && !ambiguous;
         const limit = knownTarget ? state.target : control.amount;
         if (!budgetUnit(control) || !validAmount(state.consumed) || !validAmount(limit)) continue;
         if (knownTarget) comparable++;
         if (state.consumed < limit * 0.9) continue;
-        const universal = knownTarget && !state.overrideBudgetId && state.target === control.amount;
+        const universal = knownTarget && !override && !state.overrideBudgetId && state.target === control.amount;
         const severity = knownTarget && state.consumed >= limit ? "critical" : "warning";
         const percent = limit > 0 ? state.consumed / limit * 100 : null;
         rows.push({
@@ -103,10 +111,11 @@ export function buildUniversalAttention(data, now = Date.now()) {
             user: state.user, key, universalAmount: control.amount, targetAmount: state.target,
             overrideBudgetId: state.overrideBudgetId,
             applicability: expired ? "Saved override has expired; refresh to resolve the current limit." :
+                ambiguous ? "Multiple individual override candidates returned; current limit unverified. Refresh this user to resolve." :
                 conflict ? "Reported target conflicts with the saved individual override; current limit unverified. Refresh this user to resolve." :
                 !knownTarget ? "Reported target unavailable; universal baseline only, applicability unverified." :
                 universal ? "Reported per-user target matches the universal baseline; no override ID returned." :
-                state.overrideBudgetId ? "Reported per-user target with an override; not the universal cap." :
+                state.overrideBudgetId || override ? "Reported per-user target with an override candidate; not a confirmed universal cap." :
                 "Reported per-user target differs from the universal baseline; more-specific control may apply.",
             limitLabel: knownTarget ? "Reported per-user target" : "Universal baseline (not a confirmed limit)",
             reasons: [{code: knownTarget ? state.consumed >= limit ? "exhausted" : "near-limit" : "baseline-near-limit",
