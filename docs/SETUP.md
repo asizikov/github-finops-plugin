@@ -247,7 +247,10 @@ Successful and failed attempts are cached for 15 minutes in user-local
 last successful public check or a nonblocking error; offline/invalid responses
 never imply up-to-date. Only a strictly newer SemVer offers a bottom-right,
 nonmodal reminder. Dismissal is saved for that exact version across restarts;
-a later newer version can appear. Closing the canvas clears its check timer.
+a later newer version can appear. Separate per-version markers in
+`updates.json.dismissals/` preserve dismissals when multiple plugin processes
+refresh the shared check cache. Existing dismissals in `updates.json` are
+preserved automatically. Closing the canvas clears its check timer.
 
 **How to update:** for a CLI-managed installation, run the documented
 [`copilot plugin update`](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference)

@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {mkdtemp, rm, readFile, writeFile} from "node:fs/promises";
+import {mkdtemp, mkdir, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {CHECK_INTERVAL, VERSION_URL, UPDATE_URL, compareVersions, parseVersion, publishedVersion, createUpdateChecker} from "./updates.mjs";
@@ -94,7 +94,6 @@ test("coalesces requests, persists 15-minute cadence and exact-version dismissal
     time += CHECK_INTERVAL;
     assert.equal((await restarted.check()).available, true);
     assert.equal(calls, 3);
-    assert.equal(JSON.parse(await readFile(options.file)).dismissed, "0.3.0");
 });
 
 test("previously persisted attempts honor the 15-minute boundary rather than a daily cooldown", async t => {
@@ -110,6 +109,43 @@ test("previously persisted attempts honor the 15-minute boundary rather than a d
         assert.equal(result.latest, expectedCalls ? "0.4.0" : "0.3.0");
         assert.equal(result.available, Boolean(expectedCalls));
     }
+});
+
+test("independent plugin instances cannot erase each other's saved dismissals during refresh", async t => {
+    let time = 1000, offer = "0.3.0";
+    const options = await fixture(t, {now: () => time, latest: async () => offer});
+    const first = createUpdateChecker(options);
+    const second = createUpdateChecker(options);
+    await first.check();
+    await second.check();
+    await first.dismiss("0.3.0");
+    time += CHECK_INTERVAL;
+    await second.check();
+    assert.equal((await createUpdateChecker(options).check()).available, false);
+    assert.equal((await second.check()).available, false);
+    offer = "0.4.0";
+    time += CHECK_INTERVAL;
+    assert.equal((await second.check()).available, true);
+    await second.dismiss("0.4.0");
+    offer = "0.3.0";
+    time += CHECK_INTERVAL;
+    assert.equal((await first.check()).available, false);
+    offer = "0.4.0";
+    time += CHECK_INTERVAL;
+    assert.equal((await first.check()).available, false);
+});
+
+test("legacy dismissals survive check-cache replacement and restart", async t => {
+    let time = 1000;
+    const options = await fixture(t, {now: () => time, latest: async () => "0.3.0"});
+    await writeFile(options.file, JSON.stringify({
+        attemptedAt: time, checkedAt: time, latest: "0.3.0", dismissed: "0.3.0", error: null,
+    }));
+    const checker = createUpdateChecker(options);
+    assert.equal((await checker.check()).available, false);
+    time += CHECK_INTERVAL;
+    assert.equal((await checker.check()).available, false);
+    assert.equal((await createUpdateChecker(options).check()).available, false);
 });
 
 test("offline, malformed and timeout errors stay unknown, retain last success, and retry after 15 minutes", async t => {
@@ -138,7 +174,7 @@ test("offline, malformed and timeout errors stay unknown, retain last success, a
     }
 });
 
-test("invalid saved state is diagnosed; dismissal persistence failure remains visible", async t => {
+test("invalid saved state is diagnosed; inaccessible dismissal storage remains explicit", async t => {
     const logs = [];
     const options = await fixture(t, {log: message => logs.push(message), latest: async () => "0.3.0"});
     await writeFile(options.file, '{"latest":"not-semver"}');
@@ -148,7 +184,10 @@ test("invalid saved state is diagnosed; dismissal persistence failure remains vi
     await rm(options.file);
     await rm(join(options.file, ".."), {recursive: true});
     await writeFile(join(options.file, ".."), "blocks directory");
-    await assert.rejects(checker.dismiss("0.3.0"), /Could not save/);
+    await assert.rejects(checker.dismiss("0.3.0"), /Could not read saved update dismissal/);
+    assert.match((await checker.check()).error, /Could not read saved update dismissal/);
+    await rm(join(options.file, ".."));
+    await mkdir(join(options.file, ".."));
     assert.equal((await checker.check()).available, true);
 });
 

@@ -77,7 +77,8 @@ export function createUpdateChecker({
     let state;
     async function readState() {
         if (state) return;
-        state = {attemptedAt: null, checkedAt: null, latest: null, dismissed: null, error: null};
+        const next = {attemptedAt: null, checkedAt: null, latest: null, error: null};
+        let legacyDismissal = null;
         try {
             const text = await readFile(file, "utf8");
             if (Buffer.byteLength(text) > 2048) throw new Error("Update state is too large.");
@@ -88,25 +89,44 @@ export function createUpdateChecker({
             }
             for (const key of ["latest", "dismissed"]) if (saved[key] != null) parseVersion(saved[key]);
             if (saved.error != null && typeof saved.error !== "string") throw new Error("Invalid update error.");
-            for (const key of Object.keys(state)) state[key] = saved[key] ?? null;
+            for (const key of Object.keys(next)) next[key] = saved[key] ?? null;
+            legacyDismissal = saved.dismissed == null ? null : parseVersion(saved.dismissed).version;
         } catch (error) {
             if (error.code !== "ENOENT") {
                 log(error.message);
-                state.error = "Could not read saved update status.";
+                next.error = "Could not read saved update status.";
             }
         }
+        if (legacyDismissal) {
+            try {await save(dismissalPath(legacyDismissal), {version: legacyDismissal});}
+            catch (error) {log(error.message);throw new Error("Could not preserve saved update dismissal.");}
+        }
+        state = next;
     }
-    async function save() {
-        const temporary = `${file}.${randomUUID()}.tmp`;
-        await mkdir(dirname(file), {recursive: true, mode: 0o700});
-        await writeFile(temporary, `${JSON.stringify(state)}\n`, {mode: 0o600});
-        await rename(temporary, file);
+    async function save(target, value) {
+        const temporary = `${target}.${randomUUID()}.tmp`;
+        await mkdir(dirname(target), {recursive: true, mode: 0o700});
+        await writeFile(temporary, `${JSON.stringify(value)}\n`, {mode: 0o600});
+        await rename(temporary, target);
     }
-    function view(version) {
+    function dismissalPath(version) {
+        return join(`${file}.dismissals`, `${parseVersion(version).version}.json`);
+    }
+    async function isDismissed(version) {
+        try {
+            const text = await readFile(dismissalPath(version), "utf8");
+            if (Buffer.byteLength(text) > 512 || JSON.parse(text)?.version !== version) throw new Error("Invalid update dismissal.");
+            return true;
+        } catch (error) {
+            if (error.code === "ENOENT") return false;
+            throw error;
+        }
+    }
+    function view(version, dismissed = false) {
         return {installed: version, latest: state.latest, checkedAt: state.checkedAt, attemptedAt: state.attemptedAt,
             error: state.error, updateUrl: UPDATE_URL,
             available: !state.error && state.latest !== null && compareVersions(state.latest, version) > 0 &&
-                state.dismissed !== state.latest};
+                !dismissed};
     }
     async function check() {
         if (pending) return pending;
@@ -123,10 +143,14 @@ export function createUpdateChecker({
                     log(error.message);
                     state.error = "Could not check for plugin updates. The next check is in 15 minutes.";
                 }
-                try {await save();}
+                try {await save(file, state);}
                 catch (error) {log(error.message);state.error = "Could not save plugin update status.";}
             }
-            return view(version);
+            try {return view(version, state.latest !== null && await isDismissed(state.latest));}
+            catch (error) {
+                log(error.message);
+                return {...view(version), error: "Could not read saved update dismissal.", available: false};
+            }
         })();
         try {return await pending;} finally {pending = null;}
     }
@@ -134,14 +158,13 @@ export function createUpdateChecker({
         check,
         async dismiss(version) {
             const result = await check();
-            if (typeof version !== "string" || version !== result.latest || result.error ||
+            if (result.error) throw new Error(result.error);
+            if (typeof version !== "string" || version !== result.latest ||
                 compareVersions(version, result.installed) <= 0) throw new Error("This update offer has changed. Reload the canvas.");
-            if (state.dismissed === version) return result;
-            const previous = state.dismissed;
-            state.dismissed = version;
-            try {await save();}
-            catch (error) {state.dismissed = previous;log(error.message);throw new Error("Could not save update dismissal. Try again.");}
-            return view(result.installed);
+            if (!result.available) return result;
+            try {await save(dismissalPath(version), {version});}
+            catch (error) {log(error.message);throw new Error("Could not save update dismissal. Try again.");}
+            return {...result, available: false};
         },
     };
 }
