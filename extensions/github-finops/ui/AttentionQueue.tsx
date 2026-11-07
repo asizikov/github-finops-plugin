@@ -1,8 +1,9 @@
 import {Button, FormControl, Label, Select} from '@primer/react';
 import {useState} from 'react';
 import {buildAttentionQueue, buildUniversalAttention, mergeAttentionBudgets, mergeUserAttentionRows, paginateAttention, type UniversalUsers} from '../attention.mjs';
-import {budgetAmount, budgetEntity, scopeLabel, type BudgetRecord} from './budget-format.mjs';
+import {budgetAmount, scopeLabel, type BudgetRecord} from './budget-format.mjs';
 import {SnapshotStatus, useSnapshot} from './Snapshot';
+import {BudgetEntity} from './ResourceLinks';
 
 export default function AttentionQueue({openBudget, openUser}: {openBudget: (id: string) => void; openUser: (login: string) => void}) {
   const state = useSnapshot<BudgetRecord[]>('attention');
@@ -59,7 +60,7 @@ export default function AttentionQueue({openBudget, openUser}: {openBudget: (id:
           <td><button className="row-link" type="button" onClick={() => openBudget(budget.id)}>{budget.product}</button><p className="caption">{budget.id}</p>
             {budget.fetchedAt && <p className="caption">Record saved {new Date(budget.fetchedAt).toLocaleString()}; may be stale.</p>}
           </td>
-          <td>{user ? <button className="row-link" type="button" onClick={() => openUser(user)}>{user}</button> : scopeLabel(budget.scope)}<p className="caption">{user ? 'Universal per-user control' : budgetEntity(budget)}</p>
+          <td>{user ? <button className="row-link" type="button" onClick={() => openUser(user)}>{user}</button> : scopeLabel(budget.scope)}<p className="caption">{user ? 'Universal per-user control' : <BudgetEntity budget={budget} />}</p>
             {applicability && <p className="caption">{applicability}</p>}
           </td>
           <td><Label variant={severity === 'critical' ? 'danger' : 'attention'}>{severity === 'critical' ? 'Critical' : 'Warning'}</Label>
