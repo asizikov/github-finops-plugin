@@ -82,6 +82,53 @@ change invalidates them for this context without deleting another account's data
 Offline cache reads cannot check remotely revoked permissions or changed access
 for an unchanged credential. Refresh is required to recheck GitHub access.
 
+### Database migrations
+
+Opening the cache automatically runs the pending SQL migrations in
+`extensions/github-finops/migrations.mjs` before any cache operations. The
+database's `PRAGMA user_version` is an integer schema version, independent of
+the plugin's Semantic Versioning. Version 1 adopts the historical unversioned
+schemas, including snapshots without namespace/resource columns, and preserves
+snapshot payloads and errors, relationship provenance, generation fences,
+attribution revisions and access-context cooldowns. It does not fetch GitHub
+data or upgrade the semantics of cached JSON payloads.
+
+Initialization takes `BEGIN IMMEDIATE` **before** reading the version or schema,
+so concurrent canvas processes serialize and reread the committed version after
+obtaining the lock. Pending migrations and version stamps commit together;
+an upgrade failure rolls back both DDL and data. A five-second busy timeout
+bounds lock waits. WAL is enabled only after compatibility checking and a
+successful migration transaction, so an older plugin cannot change the journal
+mode of a database with a newer schema.
+
+Known legacy tables, columns, primary keys and indexes are checked before
+adoption; malformed stored types/JSON, incomplete populated relationship tables
+and incompatible shapes fail explicitly instead of being stamped current.
+Versioned databases must match their recorded schema. A newer schema produces
+an actionable **update the plugin** error, never a downgrade or reset.
+Migrations are forward-only; installing an older plugin is not a database
+rollback strategy.
+
+On an error, stop FinOps canvases and back up the cache directory, including
+any `cache.sqlite-wal` and `cache.sqlite-shm` companions, before investigating.
+For a newer-schema error, update the plugin to a compatible release. For
+permissions, integrity or schema errors, repair the underlying issue or restore
+a verified compatible backup while all cache users are stopped. Keep the
+original backup; do not lower `user_version` by hand or delete the cache as an
+automatic recovery step. Initialization never silently discards customer data.
+
+To add a schema change, append an immutable `{version, sql}` entry with the next
+consecutive integer to `migrations`; do not edit an already released entry.
+The registry rejects gaps and duplicate/out-of-order versions. SQL runs in the
+existing transaction: do not include transaction control, journal-mode changes,
+or other nontransactional operations. A temporary in-memory SQLite database
+replays the same SQL to validate the expected schema without a second schema
+definition. Keep the version-zero adoption rules tied to the version-1 legacy
+baseline. Add real temporary SQLite fixtures covering the previous version,
+data preservation, failure rollback and concurrent opens; run the migration,
+cache and relationship tests plus the normal project checks. JSON payload
+format changes require their own explicit compatibility handling.
+
 ## Cost centers
 
 The sidebar includes Overview, Cost Centers, Budgets, and Users.

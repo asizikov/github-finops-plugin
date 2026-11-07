@@ -1,24 +1,3 @@
-export const relationshipSchema = `
-    CREATE TABLE IF NOT EXISTS relationship_sources (
-        namespace TEXT NOT NULL, snapshot_key TEXT NOT NULL, kind TEXT NOT NULL,
-        fetched_at TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL,
-        PRIMARY KEY (namespace, snapshot_key)
-    );
-    CREATE TABLE IF NOT EXISTS relationship_centers (
-        namespace TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, fetched_at TEXT NOT NULL,
-        PRIMARY KEY (namespace, id)
-    );
-    CREATE TABLE IF NOT EXISTS relationship_budgets (
-        namespace TEXT NOT NULL, id TEXT NOT NULL, scope TEXT NOT NULL, target TEXT,
-        payload TEXT NOT NULL, fetched_at TEXT NOT NULL, PRIMARY KEY (namespace, id)
-    );
-    CREATE TABLE IF NOT EXISTS budget_cost_centers (
-        namespace TEXT NOT NULL, budget_id TEXT NOT NULL, center_id TEXT NOT NULL,
-        matched_by TEXT NOT NULL, PRIMARY KEY (namespace, budget_id)
-    );
-    CREATE INDEX IF NOT EXISTS budgets_by_center ON budget_cost_centers (namespace, center_id);
-`;
-
 export function indexRelationships(db, namespace, key, snapshot) {
     if (!["cost-centers", "cost-center-detail", "budgets", "budget-detail"].includes(snapshot?.kind)) return;
     const isCenter = snapshot.kind === "cost-centers" || snapshot.kind === "cost-center-detail";
