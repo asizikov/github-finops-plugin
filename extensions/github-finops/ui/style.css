@@ -88,6 +88,13 @@ tr:last-child td { border-bottom: 0; }
 .row-link { padding: 0; border: 0; background: none; color: var(--fgColor-accent); cursor: pointer; font: inherit; text-align: left; }
 .row-link:hover { text-decoration: underline; }
 .row-link:focus-visible { outline: 2px solid var(--color-focus-outline, var(--borderColor-accent-emphasis)); outline-offset: 3px; }
+.external-link { display: inline-flex; align-items: center; gap: 4px; color: var(--fgColor-accent); text-decoration: none; }
+.external-link:hover { text-decoration: underline; }
+.external-link:focus-visible { outline: 2px solid var(--color-focus-outline, var(--borderColor-accent-emphasis)); outline-offset: 3px; border-radius: 2px; }
+.external-link-icon { flex: none; color: var(--fgColor-muted); }
+.list-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 320px); gap: 16px; align-items: start; }
+.filter-notice { margin-top: 16px; }
+@media (max-width: 760px) { .list-filters { grid-template-columns: 1fr; } }
 .pagination, .pagination > div { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .pagination { justify-content: space-between; margin-top: 20px; font-size: 12px; }
 .empty-results { padding: 16px; color: var(--fgColor-muted); }
@@ -128,6 +135,7 @@ details p { margin-top: 8px; }
 .section-note { margin-top: 16px; }
 .filter-bar { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin: 24px 0 16px; }
 .attention-section { border-top: 1px solid var(--borderColor-muted); margin-top: 32px; padding-top: 32px; }
+.attention-section .action-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .settings-section { margin-bottom: 24px; }
 .settings-section h3 { margin-top: 0; }
 .settings-section { --fact-label-width: 180px; }

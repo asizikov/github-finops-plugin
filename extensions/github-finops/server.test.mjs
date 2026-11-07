@@ -60,6 +60,10 @@ test("serves bundled UI and normalized reads only within its protected loopback 
         assert.deepEqual(loads.at(-1),{refresh:false,resource:"budgets",cacheOnly:true});
         assert.equal((await fetch(`${url}attention?refresh=1`)).status,404);
         assert.equal((await fetch(`${url}attention`,{method:"POST"})).status,405);
+        assert.equal((await fetch(`${url}universal-users`)).status,200);
+        assert.deepEqual(loads.at(-1),{refresh:false,resource:"universal-users",cacheOnly:true});
+        assert.equal((await fetch(`${url}universal-users?refresh=1`)).status,200);
+        assert.deepEqual(loads.at(-1),{refresh:true,resource:"universal-users",cacheOnly:false});
     } finally {
         await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }

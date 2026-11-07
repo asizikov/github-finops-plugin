@@ -44,6 +44,81 @@ test("cold start fetches once; concurrent and repeated warm opens make zero addi
     assert.equal(state.calls, 3);
 });
 
+test("universal user states are explicit, durable, namespace/month isolated and retain last-good pages on failure", async t => {
+    t.mock.method(console, "error", () => {});
+    const {cache, store, state, options} = setup(t);
+    let calls = 0;
+    let fail = false;
+    options.read = async path => {
+        calls++;
+        if (!path.includes("user-states")) return {budgets:[{id:"universal",budget_type:"BundlePricing",
+            budget_scope:"multi_user_customer",budget_product_sku:"ai_credits",budget_amount:100}],has_next_page:false};
+        if (fail && path.includes("page=2&")) throw new GitHubReadError("State read denied", null, 403);
+        return {user_states:[{user:path.includes("page=1&")?"octocat":"second-user",consumed_amount:90,target_amount:100}],
+            has_next_page:path.includes("page=1&"),total_count:2};
+    };
+    cache.read = options.read;
+    const resource = "universal-users";
+    assert.equal(await cache.get(input, {resource,cacheOnly:true}), null);
+    assert.equal(calls, 0);
+    const live = await cache.get(input,{resource,refresh:true});
+    assert.equal(calls, 3);
+    assert.equal(live.data.states.length, 2);
+    const restarted = new OverviewCache(store, options);
+    assert.equal((await restarted.get(input,{resource,cacheOnly:true})).cache.source, "cached");
+    assert.equal(calls, 3);
+    fail = true;
+    const failed = await cache.get(input,{resource,refresh:true});
+    assert.deepEqual(failed.data, JSON.parse(JSON.stringify(live.data)));
+    assert.equal(failed.cache.fetchedAt, live.cache.fetchedAt);
+    assert.equal(failed.cache.error, "State read denied");
+    assert.equal((await cache.get(input,{resource,cacheOnly:true})).cache.error, "State read denied");
+    state.account = "another-account";
+    assert.equal(await cache.get(input,{resource,cacheOnly:true}), null);
+    state.account = "account-one";
+    for (const target of [{enterprise:"other-enterprise"},{...input,host:"other.example"}]) {
+        assert.equal(await cache.get(target,{resource,cacheOnly:true}), null);
+    }
+    state.now = new Date("2025-02-01T00:00:00Z");
+    assert.equal(await cache.get(input,{resource,cacheOnly:true}), null);
+    assert.equal(calls, 6);
+});
+
+test("universal user-state rate limits retain snapshots and block subsequent billing reads", async t => {
+    t.mock.method(console,"error",()=>{});
+    const {cache,state} = setup(t);
+    cache.read = async path => path.includes("user-states")
+        ? {user_states:[],has_next_page:false,total_count:0}
+        : {budgets:[{id:"universal",budget_scope:"multi_user_customer",budget_type:"BundlePricing",
+            budget_product_sku:"ai_credits",budget_amount:100}],has_next_page:false};
+    const options = {resource:"universal-users",refresh:true};
+    await cache.get(input,options);
+    const retryAt = "2025-01-02T00:05:00Z";
+    cache.read = async () => {throw new GitHubReadError("Rate limited",retryAt,429);};
+    const failed = await cache.get(input,options);
+    assert.equal(failed.cache.retryAt,retryAt);
+    cache.read = async () => {throw new Error("Cooldown must prevent network");};
+    const warm = await cache.get(input,options);
+    assert.equal(warm.cache.retryAt,retryAt);
+    assert.equal(warm.data.states.length,0);
+    assert.equal(state.now.toISOString(),"2025-01-02T00:00:00.000Z");
+});
+
+test("legacy overview JSON and new universal state snapshots coexist without changing SQL schema", async t => {
+    const {cache,store,state} = setup(t);
+    cache.load = async () => ({budgets:[{scope:"multi_user_customer",configured:true,amount:50,consumed:null}],
+        spending:{status:"unavailable",message:"No rows",period:{year:2025,month:1}},updatedAt:state.now.toISOString()});
+    await cache.get(input);
+    const legacy = await cache.get(input,{cacheOnly:true});
+    assert.equal(legacy.budgets[0].product,undefined);
+    assert.equal(legacy.budgets[0].amount,50);
+    assert.equal(await cache.get(input,{resource:"universal-users",cacheOnly:true}),null);
+    const version = store.db.prepare("PRAGMA user_version").get().user_version;
+    await cache.get(input,{resource:"universal-users",refresh:true});
+    assert.equal(store.db.prepare("PRAGMA user_version").get().user_version,version);
+    assert.equal((await cache.get(input,{cacheOnly:true})).budgets[0].amount,50);
+});
+
 test("snapshots persist across a new Node process without API reads", async t => {
     const { cache, path } = setup(t);
     await cache.get(input);

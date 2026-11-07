@@ -34,6 +34,9 @@ function flag(value, field) {
 
 export function normalizeBudget(budget, scope) {
     return {
+        ...(budget.id ? {id: budget.id} : {}),
+        ...(budget.budget_type ? {type: budget.budget_type} : {}),
+        ...(budget.budget_product_sku ? {product: budget.budget_product_sku} : {}),
         scope,
         configured: true,
         amount: amount(budget.budget_amount, "budget amount"),
@@ -55,24 +58,36 @@ export async function loadOverview(input, read = ghRead, now = new Date()) {
             if (!Array.isArray(response.budgets) || typeof response.has_next_page !== "boolean") {
                 throw new Error("GitHub returned an unexpected budget list.");
             }
-            matches.push(...response.budgets.filter((budget) =>
-                budget.budget_type === "BundlePricing" &&
-                budget.budget_product_sku === "ai_credits" &&
-                budget.budget_scope === scope));
+            if (response.has_next_page && response.budgets.length === 0) {
+                throw new Error("GitHub returned an incomplete budget list.");
+            }
+            matches.push(...response.budgets.filter((budget) => budget.budget_scope === scope &&
+                (scope === "multi_user_customer" ||
+                    (budget.budget_type === "BundlePricing" && budget.budget_product_sku === "ai_credits"))));
             if (!response.has_next_page) break;
         }
-        if (matches.length === 0) return { scope, configured: false };
-        if (matches.length !== 1) throw new Error(`Multiple AI Credits budgets returned for ${scope}.`);
-        const id = matches[0].id;
-        if (typeof id !== "string" || !/^[a-zA-Z0-9-]+$/.test(id)) {
-            throw new Error("GitHub returned an invalid budget ID.");
+        if (matches.length === 0) return [{ scope, configured: false }];
+        const budgets = [];
+        const seen = new Set();
+        for (const match of matches) {
+            const id = match.id;
+            if (typeof id !== "string" || !/^[a-zA-Z0-9-]+$/.test(id) || seen.has(id) ||
+                typeof match.budget_type !== "string" || !match.budget_type ||
+                typeof match.budget_product_sku !== "string" || !match.budget_product_sku) {
+                throw new Error("GitHub returned an invalid or repeated budget ID.");
+            }
+            seen.add(id);
         }
-        const detail = await read(`${base}/${id}`, host);
-        if (detail.budget_type !== "BundlePricing" || detail.budget_product_sku !== "ai_credits" ||
-            detail.budget_scope !== scope) {
-            throw new Error("GitHub returned an unexpected budget detail.");
+        for (const match of matches) {
+            const id = match.id;
+            const detail = await read(`${base}/${id}`, host);
+            if (detail.id !== id || detail.budget_type !== match.budget_type ||
+                detail.budget_product_sku !== match.budget_product_sku || detail.budget_scope !== scope) {
+                throw new Error("GitHub returned an unexpected budget detail.");
+            }
+            budgets.push(normalizeBudget(detail, scope));
         }
-        return normalizeBudget(detail, scope);
+        return budgets;
     }));
     const [budgetResults, spending] = await Promise.all([
         budgetReads,
@@ -80,6 +95,6 @@ export async function loadOverview(input, read = ghRead, now = new Date()) {
     ]);
     const failed = budgetResults.find(result => result.status === "rejected");
     if (failed) throw failed.reason;
-    const budgets = budgetResults.map(result => result.value);
+    const budgets = budgetResults.flatMap(result => result.value);
     return { budgets, spending, updatedAt: new Date().toISOString() };
 }

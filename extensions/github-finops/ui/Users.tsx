@@ -1,7 +1,8 @@
 import {useState, type FormEvent, type Dispatch, type SetStateAction} from 'react';
 import {Button, Flash, Label, TextInput} from '@primer/react';
 import {useSnapshot, SnapshotStatus, RefreshButton} from './Snapshot';
-import {budgetAmount, budgetEntity, scopeLabel} from './budget-format.mjs';
+import {budgetAmount, scopeLabel} from './budget-format.mjs';
+import {BudgetEntity} from './ResourceLinks';
 import {normalizeUsername, resolveUserBudgets, userBudgetEnforcement, type UserData} from './user-format.mjs';
 import EnterpriseTeams from './EnterpriseTeams';
 import UserBudgetExplanation from './UserBudgetExplanation';
@@ -41,7 +42,7 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
           <thead><tr><th scope="col">Budget</th><th scope="col">Limit / user</th><th scope="col">Status</th><th scope="col">Enforcement</th></tr></thead>
           <tbody>{impact.controls.map(({budget,center,state: status,source}) => <tr key={budget.id}>
             <td><button className="row-link" type="button" onClick={() => openBudget(budget.id)}>{scopeLabel(budget.scope)}</button>
-              <p className="caption">{center ? <button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button> : budgetEntity(budget)}</p>
+              <p className="caption">{center ? <button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button> : <BudgetEntity budget={budget} />}</p>
               {center && <span className="relationship-note">{center.matchedBy === 'id' ? 'Cost center matched by ID' : 'Exact unique name association from saved complete center list; may be stale'}</span>}
             </td>
             <td>{budgetAmount(budget.amount,budget)}</td>
@@ -61,7 +62,7 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
           <thead><tr><th scope="col">Budget</th><th scope="col">Shared spending budget</th><th scope="col">Applicability</th><th scope="col">Control</th></tr></thead>
           <tbody>{impact.guardrails.map(({budget,center,reason}) => <tr key={budget.id}>
             <td><button className="row-link" type="button" onClick={() => openBudget(budget.id)}>{scopeLabel(budget.scope)}</button>
-              <p className="caption">{center ? <button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button> : budgetEntity(budget)}</p>
+              <p className="caption">{center ? <button className="row-link" type="button" onClick={() => openCenter(center.id)}>{center.name}</button> : <BudgetEntity budget={budget} />}</p>
               {center && <span className="relationship-note">{center.matchedBy === 'id' ? 'Cost center matched by ID' : 'Exact unique name association; may be stale'}</span>}
             </td>
             <td>{budgetAmount(budget.amount,budget)}<p className="caption">{budget.scope === 'enterprise' ? 'Enterprise-wide / month' : budget.scope === 'cost_center' ? 'Shared cost center total / month' : 'Shared scope total / month'}</p></td>
@@ -81,8 +82,8 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
   </section>;
 }
 
-export default function Users({lookup,setLookup,openCenter,openBudget}: {
-  lookup: UserLookup; setLookup: Dispatch<SetStateAction<UserLookup>>;
+export default function Users({lookup,setLookup,openCenter,openBudget,back,backLabel}: {
+  lookup: UserLookup; setLookup: Dispatch<SetStateAction<UserLookup>>; back?: () => void; backLabel?: string;
 } & Navigation) {
   const [error,setError] = useState<string | null>(null);
   function submit(event: FormEvent) {
@@ -91,6 +92,7 @@ export default function Users({lookup,setLookup,openCenter,openBudget}: {
     catch (error) {setError(error instanceof Error ? error.message : 'Enter a GitHub username.');}
   }
   return <main>
+    {back && <Button variant="invisible" onClick={back}>{backLabel}</Button>}
     <div className="overview-heading"><div><h2>Users</h2><p className="muted">Look up one user's cost centers and AI Credits budget controls.</p></div></div>
     <form className="user-search" onSubmit={submit}>
       <label htmlFor="user-lookup">GitHub username</label>

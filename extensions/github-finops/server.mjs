@@ -6,6 +6,7 @@ import { cachedOverview, databasePath, cacheControls } from "./cache.mjs";
 import {versionInfo, authSource, revealDatabase} from "./settings.mjs";
 import {readTarget, saveTarget, cliStatus, parseEnterpriseUrl, canLoadOverview} from "./onboarding.mjs";
 import {updateChecker} from "./updates.mjs";
+import {createPreferences} from "./preferences.mjs";
 
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -33,6 +34,7 @@ export async function startServer(input, load = cachedOverview, {
     restoreTarget = readTarget, persistTarget = saveTarget, cli = cliStatus,
     controlCache = cacheControls,
     updates = updateChecker,
+    preferences = createPreferences(),
 } = {}) {
     let config = null;
     let startupError = null;
@@ -138,6 +140,33 @@ export async function startServer(input, load = cachedOverview, {
             }
             return;
         }
+        if (route === "preferences" && (req.method === "GET" || req.method === "POST")) {
+            res.setHeader("Content-Type", "application/json");
+            if (req.method === "POST" && req.headers.origin !== `http://${req.headers.host}`) {
+                res.writeHead(403).end(JSON.stringify({error: "Saving preferences requires a same-origin request."}));
+                return;
+            }
+            if (!config) {
+                res.writeHead(409).end(JSON.stringify({error: "Connect your enterprise first."}));
+                return;
+            }
+            try {
+                if (req.method === "GET") res.end(JSON.stringify(await preferences.read(config)));
+                else {
+                    let body = "";
+                    for await (const chunk of req) {
+                        body += chunk;
+                        if (Buffer.byteLength(body) > 1024) throw new Error("Preference update is too large.");
+                    }
+                    res.end(JSON.stringify(await preferences.update(config, JSON.parse(body))));
+                }
+            } catch (error) {
+                console.error("Preferences request failed:", error);
+                res.writeHead(req.method === "GET" || error.status === 500 ? 500 : 400).end(JSON.stringify({error: error.publicMessage ??
+                    (req.method === "GET" ? "Could not read saved preferences." : "Could not save this preference. Try again.")}));
+            }
+            return;
+        }
         if (route === "settings/reveal" && req.method === "POST") {
             res.setHeader("Content-Type", "application/json");
             if (req.headers.origin !== `http://${req.headers.host}`) {
@@ -202,11 +231,13 @@ export async function startServer(input, load = cachedOverview, {
         const userRoute = route?.match(/^users\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,99})(\?refresh=1)?$/);
         const teamRoute = route?.match(/^team-cost-centers\/((?:ent(?::|%3[Aa]))?[a-zA-Z0-9][a-zA-Z0-9_-]*)(\?refresh=1)?$/);
         const attentionRoute = route === "attention";
-        if (route === "overview" || route === "overview?refresh=1" || centerRoute || budgetRoute || userRoute || teamRoute || attentionRoute) {
+        const universalRoute = route === "universal-users" || route === "universal-users?refresh=1";
+        if (route === "overview" || route === "overview?refresh=1" || centerRoute || budgetRoute || userRoute || teamRoute || attentionRoute || universalRoute) {
             res.setHeader("Content-Type", "application/json");
             try {
                 const options = { refresh: route.endsWith("?refresh=1") };
                 if (attentionRoute) {options.resource = "budgets";options.cacheOnly = true;}
+                if (universalRoute) {options.resource = "universal-users";options.cacheOnly = !options.refresh;}
                 if (centerRoute) {
                     options.resource = centerRoute[1] ? "cost-center-detail" : "cost-centers";
                     if (centerRoute[1]) options.id = centerRoute[1];

@@ -2,6 +2,7 @@ import {Button, Label, TextInput, FormControl} from '@primer/react';
 import {paginateCenters, resourceTypeLabels, type ListState} from './pagination.mjs';
 import {useSnapshot, SnapshotStatus, RefreshButton} from './Snapshot';
 import {RelatedBudgets} from './Relationships';
+import {ResourceName} from './ResourceLinks';
 
 type Resource = {type: string; name: string};
 type Center = {
@@ -35,7 +36,7 @@ function Details({id, back, backLabel, openBudget}: {id: string; back: () => voi
       <RelatedBudgets centerId={center.id} relationships={state.snapshot?.relationships} open={openBudget} />
       <section className="resource-section"><h3>Assigned resources ({center.resources.length})</h3>
         {center.resourcesComplete === false && <p className="resource-warning" role="status">Assignments are incomplete. The resources shown may not include every assignment.</p>}
-        {center.resources.length ? <div className="table-scroll"><table><caption className="sr-only">Assigned cost center resources</caption><thead><tr><th scope="col">Type</th><th scope="col">Name</th></tr></thead><tbody>{center.resources.map(resource => <tr key={JSON.stringify([resource.type, resource.name])}><td>{resource.type}</td><td>{resource.name}</td></tr>)}</tbody></table></div> : <p className="muted">No assigned resources returned.</p>}
+        {center.resources.length ? <div className="table-scroll"><table><caption className="sr-only">Assigned cost center resources</caption><thead><tr><th scope="col">Type</th><th scope="col">Name</th></tr></thead><tbody>{center.resources.map(resource => <tr key={JSON.stringify([resource.type, resource.name])}><td>{resource.type}</td><td><ResourceName type={resource.type} name={resource.name} /></td></tr>)}</tbody></table></div> : <p className="muted">No assigned resources returned.</p>}
       </section>
     </div>}
   </main>;

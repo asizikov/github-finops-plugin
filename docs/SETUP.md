@@ -30,9 +30,11 @@ Include the updated `extensions/github-finops/assets/` files when distributing
 the plugin, then reload extensions. Do not install the Copilot SDK as a package:
 the runtime resolves it automatically.
 
-The overview summary cards read the enterprise AI Credits budget and
-enterprise-wide default per-user budget. Missing consumption is unavailable,
-not zero; the separate cached attention queue can include other budget scopes.
+The overview summary cards read enterprise AI Credits spending controls and all
+returned enterprise universal per-user controls, preserving product/SKU, units,
+and multiple controls separately. Universal limits are per user, not shared pools;
+individual and cost center per-user budgets take precedence. Aggregate consumption
+is never labeled as individual usage. Missing fields are unavailable, not zero.
 
 Current spending uses the enterprise AI-credit usage report with an explicit
 UTC current year/month and no cost-center, organization, user, model, or product
@@ -159,7 +161,15 @@ products, fetching every list page without a scope filter. Search covers the
 full list by product/SKU, pricing type, scope, entity, expiration, or ID.
 Visible pages contain at most 25 rows. Selecting a product opens its read-only
 configuration, reported consumption, alerts, enforcement, and optional expiration.
-Back navigation preserves the search and page.
+Back navigation preserves the search, SKU filter and page.
+
+The SKU filter is separate from search and lists only product/SKU values present
+in the loaded budgets, with known names beside the raw SKU. Changing it returns
+to page 1. The choice is saved per host and enterprise in user-local
+`preferences/` beside the cache (one small file per target, no credentials), so
+it survives canvas reloads and new loopback ports. A saved SKU missing from the
+current list shows all SKUs with a notice and stays saved until another choice;
+unreadable or malformed preference files are reported and never overwritten.
 
 Lists and details use the same persistent SQLite caching and manual refresh as
 cost centers, with independent resource/ID keys and shared rate-limit cooldown.
@@ -174,7 +184,7 @@ license counts. Unknown or ambiguous product units are explicitly unavailable,
 not assumed to be dollars. Raw product/SKU and pricing identifiers remain visible.
 Budgets overlap and must not be summed; tracked consumption is not an invoice.
 
-The Overview attention queue evaluates cached budgets only; it never fetches a
+The Overview attention queue opens from cached data only; it never fetches a
 list, every detail or users in the background. It flags known consumption at or
 above 90%, exhausted/over-threshold controls, exceeded alert-only thresholds and
 user overrides expiring within seven UTC calendar days. Zero limits are handled
@@ -182,6 +192,29 @@ without division; unknown units or consumption do not imply risk or zero use.
 Scope/product filters and detail links retain the ordinary navigation history.
 Coverage and saved read times stay visible; an empty queue is not an all-clear
 for budgets or users that have not been loaded.
+
+**Load / Refresh user states** explicitly reads the paginated budget list and
+`/budgets/{budget_id}/user-states` for each enterprise universal control, without
+profile or membership requests. All returned states are evaluated: API threshold
+filters use the universal denominator even when overrides apply, so filtering at
+90% would miss lower override targets. Signals instead compare `consumed_amount`
+with the returned `target_amount`, show the universal baseline separately, and
+label overrides/differing targets without claiming a universal cap is effective.
+An expired saved override or a target conflicting with a saved individual override
+requires refresh; an unknown target can only produce an
+explicitly unverified universal-baseline warning, never an exhausted-limit claim.
+Unidentified states cannot link to Users and are counted in coverage.
+
+User states use independent month/host/enterprise/credential-scoped JSON snapshots
+in the existing SQLite schema; no SQL migration or plugin version change is needed.
+Warm opens and Reload queue are cache-only, including cache misses. Failed, denied,
+inconsistent or incomplete pagination retains the last complete snapshot and an
+error, sharing the existing persistent rate-limit cooldown. Each control is bounded
+to 20 pages of 100 states (2,000 records); exceeding that bound is an incomplete
+refresh, not a healthy or empty queue. State freshness is independent of budget-list
+freshness. Users appear after consumption in the current billing cycle, so even a
+complete response is not a licensed-user roster. User signals open the in-app Users
+page with normal back navigation. Overlapping limits are never summed.
 
 References: [Budget API](https://docs.github.com/en/enterprise-cloud@latest/rest/billing/budgets),
 [Product and SKU names](https://docs.github.com/en/enterprise-cloud@latest/billing/reference/product-and-sku-names).
@@ -210,6 +243,14 @@ do not establish that no related budgets exist.
 Cost center details link to related budgets; budget lists and details link back
 to resolved cost centers. In-app back navigation preserves the originating
 detail view and each list's search and page.
+
+Organizations, repositories (`owner/repo`) and enterprise teams link to GitHub on
+the configured host and are marked with an external-link icon and "opens on
+GitHub in your browser" text. Enterprise teams use
+`/enterprises/{enterprise}/teams/{slug}` (or a validated API `html_url`), never
+an organization team path. Users open the in-app Users page with back
+navigation instead of a GitHub profile. Malformed or incomplete names, cost
+center names and IDs are shown as plain text rather than guessed links.
 
 ## User lookup
 

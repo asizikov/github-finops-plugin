@@ -70,7 +70,24 @@ test("invalid values, API failures, malformed responses and duplicate budgets fa
     await assert.rejects(loadOverview(config, async () => ({})), /unexpected budget list/);
     await assert.rejects(loadOverview(config, async () => ({
         budgets: [budget("enterprise"), budget("enterprise")], has_next_page: false,
-    })), /Multiple/);
+    })), /repeated/);
+});
+
+test("overview preserves multiple universal controls and non-AI product units without combining limits", async () => {
+    const controls = [budget("multi_user_customer"), budget("multi_user_customer", {
+        id: "sku-universal", budget_type: "SkuPricing", budget_product_sku: "copilot_ai_credit", budget_amount: 10,
+    })];
+    const result = await loadOverview(config, async path => {
+        if (path.includes("/ai_credit/usage")) return emptyUsage();
+        if (path.includes("scope=enterprise")) return {budgets: [], has_next_page: false};
+        if (path.includes("?scope=")) return {budgets: controls, has_next_page: false};
+        return controls.find(control => path.endsWith(control.id));
+    });
+    assert.equal(result.budgets.length, 3);
+    assert.deepEqual(result.budgets.slice(1).map(({id,amount,product}) => ({id,amount,product})), [
+        {id: controls[0].id, amount: 50, product: "ai_credits"},
+        {id: "sku-universal", amount: 10, product: "copilot_ai_credit"},
+    ]);
 });
 
 test("inaccessible spending is explicit and does not hide successfully read budgets", async (t) => {

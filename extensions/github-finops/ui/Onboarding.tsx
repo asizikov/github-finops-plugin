@@ -10,7 +10,7 @@ export type Startup = {
   error: string | null;
 };
 
-export default function Onboarding({startup, connected}: {startup: Startup; connected: () => void}) {
+export default function Onboarding({startup, connected}: {startup: Startup; connected: (target: Startup['target']) => void}) {
   const [url,setUrl] = useState(startup.target ? `https://${startup.target.host}/enterprises/${startup.target.enterprise}` : '');
   const [result,setResult] = useState<SettingsData | null>(null);
   const [busy,setBusy] = useState(false);
@@ -39,7 +39,7 @@ export default function Onboarding({startup, connected}: {startup: Startup; conn
       const response = await fetch('./connect/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enterpriseUrl:url})});
       const data = await response.json();
       if (!response.ok) {setRetryAt(data.retryAt ?? null);throw new Error(data.error ?? 'Could not load the overview.');}
-      connected();
+      connected(data.target ?? null);
     } catch (error) {setError(error instanceof Error ? error.message : 'Could not load the overview.');}
     finally {setBusy(false);}
   }

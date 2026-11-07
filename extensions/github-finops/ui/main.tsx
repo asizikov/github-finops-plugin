@@ -6,16 +6,21 @@ import '@primer/primitives/dist/css/functional/themes/light.css';
 import '@primer/primitives/dist/css/functional/themes/dark.css';
 import './style.css';
 import CostCenters from './CostCenters';
-import Budgets from './Budgets';
+import Budgets, {useBudgetSkuFilter} from './Budgets';
+import {ResourceLinksProvider} from './ResourceLinks';
 import Users, {type UserLookup} from './Users';
 import Settings from './Settings';
 import Onboarding, {type Startup} from './Onboarding';
 import AttentionQueue from './AttentionQueue';
 import UpdateReminder, {usePluginUpdates} from './UpdateReminder';
 import type {ListState} from './pagination.mjs';
+import {budgetAmount, type BudgetRecord} from './budget-format.mjs';
 
 type Budget = {
   scope: 'enterprise' | 'multi_user_customer';
+  id?: string;
+  type?: string;
+  product?: string;
   configured: boolean;
   amount?: number | null;
   consumed?: number | null;
@@ -57,23 +62,30 @@ function SpendingOverview({spending}: {spending: Spending}) {
 
 function BudgetCard({budget}: {budget: Budget}) {
   const perUser = budget.scope === 'multi_user_customer';
+  const record: BudgetRecord = {...budget, id: budget.id ?? budget.scope,
+    type: budget.type ?? 'BundlePricing', product: budget.product ?? 'ai_credits',
+    amount: budget.amount ?? null, consumed: budget.consumed ?? null,
+    preventFurtherUsage: budget.preventFurtherUsage ?? null, alerts: budget.alerts ?? null,
+    excludeCostCenters: budget.excludeCostCenters ?? null};
+  const labelId = `title-${budget.id ?? budget.scope}`;
   const overBudget = budget.amount != null && budget.consumed != null && budget.consumed > budget.amount;
   const excess = budget.amount != null && budget.consumed != null ? budget.consumed - budget.amount : null;
   const percent = budget.amount != null && budget.amount > 0 && budget.consumed != null
     ? budget.consumed / budget.amount * 100 : null;
-  return <section className="budget-card" aria-labelledby={`title-${budget.scope}`}>
+  return <section className="budget-card" aria-labelledby={labelId}>
     <div className="card-top">
-      <h3 id={`title-${budget.scope}`}>{perUser ? 'Default per-user budget' : 'Enterprise spending budget'}</h3>
+      <h3 id={labelId}>{perUser ? 'Universal per-user budget' : 'Enterprise spending budget'}</h3>
       <Label>{budget.configured ? booleanLabel(budget.preventFurtherUsage, 'Hard stop',
         budget.alerts === true ? 'Alert only' : 'No hard stop') : 'Not configured'}</Label>
     </div>
-    <p className="muted">{perUser ? 'The default AI Credits budget for each enterprise member.' : 'The enterprise-wide spending budget for AI Credits.'}</p>
-    {!budget.configured ? <div className="unconfigured"><strong>No budget configured</strong><p className="muted">GitHub returned no matching AI Credits budget for this scope. This does not imply a zero budget.</p></div> : <>
-      <div className="amount">{budget.amount == null ? 'Unavailable' : usd(budget.amount)} <span>USD{perUser ? ' / user' : ''}</span></div>
+    <p className="muted">{perUser ? 'Enterprise-wide default for each user. Individual and cost center per-user budgets take precedence.' : 'The enterprise-wide spending budget for AI Credits.'}</p>
+    {budget.configured && <p className="caption">{record.product} / {record.type}{budget.id && <> / {budget.id}</>}</p>}
+    {!budget.configured ? <div className="unconfigured"><strong>No budget configured</strong><p className="muted">GitHub returned no matching {perUser ? 'universal per-user' : 'AI Credits enterprise'} budget for this scope. This does not imply a zero budget.</p></div> : <>
+      <div className="amount">{budgetAmount(budget.amount ?? null,record)} <span>{perUser ? '/ user' : ''}</span></div>
       <div className="consumption">
-        <div className="row"><span className="muted">{perUser ? 'Per-user consumption' : 'Budget-tracked consumption'}</span><strong>{budget.consumed == null ? 'Unavailable' : `${usd(budget.consumed)} USD`}</strong></div>
+        <div className="row"><span className="muted">{perUser ? 'Individual consumption' : 'Budget-tracked consumption'}</span><strong>{perUser ? 'See user states below' : budgetAmount(budget.consumed ?? null,record)}</strong></div>
         {!perUser && percent !== null && <div className={`meter ${overBudget ? 'over' : ''}`} role="progressbar" aria-label="Enterprise budget used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(percent, 100)} aria-valuetext={`${percent.toFixed(1)}% of budget used`}><div style={{width: `${Math.min(percent, 100)}%`}} /></div>}
-        {budget.consumed == null ? <p className="caption">{perUser ? 'The default budget does not report individual consumption. No member usage is aggregated here.' : 'Consumption was not returned by GitHub.'}</p> : !perUser && <p className={`caption ${overBudget ? 'warning' : ''}`}>{overBudget && excess !== null ? `${usd(excess)} over budget` : percent === null ? 'Percentage unavailable for a zero or unknown budget.' : `${percent.toFixed(1)}% of budget used`}</p>}
+        {perUser ? <p className="caption">One limit per user, not a shared spending pool. Aggregate consumption is not a user's consumption. Load user states in the attention queue to evaluate individual usage.</p> : budget.consumed == null ? <p className="caption">Consumption was not returned by GitHub.</p> : <p className={`caption ${overBudget ? 'warning' : ''}`}>{overBudget && excess !== null ? `${usd(excess)} over budget` : percent === null ? 'Percentage unavailable for a zero or unknown budget.' : `${percent.toFixed(1)}% of budget used`}</p>}
       </div>
       <dl>
         <div><dt>Enforcement</dt><dd>{booleanLabel(budget.preventFurtherUsage, 'Stop further usage at the limit', 'Usage can continue beyond the limit')}</dd></div>
@@ -84,7 +96,7 @@ function BudgetCard({budget}: {budget: Budget}) {
   </section>;
 }
 
-function OverviewPage({openBudget}: {openBudget: (id: string) => void}) {
+function OverviewPage({openBudget, openUser}: {openBudget: (id: string) => void; openUser: (login: string) => void}) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,11 +142,11 @@ function OverviewPage({openBudget}: {openBudget: (id: string) => void}) {
         {overview.cache.error && <div className="error" role="alert"><Flash variant="danger">{overview.cache.error}</Flash></div>}
       </div>}
       {blocked && retryAt && <p className="cooldown" role="status">Refresh available after {new Date(retryAt).toLocaleString()}. No automatic retries.</p>}
-      <p className="section-intro">Amounts are in USD, not credit quantities. Enterprise and per-user budgets are separate controls.</p>
+      <p className="section-intro">AI Credits budget amounts are USD values, not credit quantities; other controls show their supported units. Enterprise spending and universal per-user limits are separate, overlapping controls and are never added together.</p>
       {loading && !overview && <div className="loading" role="status"><Spinner size="medium" /><span>Reading enterprise spending and budgets...</span></div>}
-      {overview && <div aria-busy={loading}><SpendingOverview spending={overview.spending} /><div className="cards">{overview.budgets.map(budget => <BudgetCard key={budget.scope} budget={budget} />)}</div><footer><span>Budgets last read {new Date(overview.cache.budgetsAt).toLocaleString()}{overview.cache.spendingAt && <> / Spending last read {new Date(overview.cache.spendingAt).toLocaleString()}</>}</span><span>Source: GitHub billing API / local SQLite</span></footer></div>}
-      <AttentionQueue openBudget={openBudget} />
-      <p className="scope-note">Summary cards show enterprise scope only. The attention queue uses cached budgets across scopes and products.</p>
+      {overview && <div aria-busy={loading}><SpendingOverview spending={overview.spending} /><div className="cards">{overview.budgets.map(budget => <BudgetCard key={budget.id ?? budget.scope} budget={budget} />)}</div><footer><span>Budgets last read {new Date(overview.cache.budgetsAt).toLocaleString()}{overview.cache.spendingAt && <> / Spending last read {new Date(overview.cache.spendingAt).toLocaleString()}</>}</span><span>Source: GitHub billing API / local SQLite</span></footer></div>}
+      <AttentionQueue openBudget={openBudget} openUser={openUser} />
+      <p className="scope-note">Summary cards show enterprise spending and enterprise universal per-user controls. The attention queue uses saved budgets across scopes and products plus explicitly loaded per-user states.</p>
     </main>;
 }
 
@@ -159,10 +171,17 @@ function App() {
   const [centerList, setCenterList] = useState<ListState>({query:'',page:1});
   const [budgetList, setBudgetList] = useState<ListState>({query:'',page:1});
   const [userLookup,setUserLookup] = useState<UserLookup>({query:'',login:null});
+  const skuFilter = useBudgetSkuFilter(Boolean(startup?.hasOverview));
   const route = history[history.length - 1];
   const page = route.page;
-  const open = (route: Route) => setHistory(history => [...history,route]);
-  const back = () => setHistory(history => history.length > 1 ? history.slice(0,-1) : [{page}]);
+  // A Users route with an id is a linked user; restore its lookup whenever that route becomes current.
+  const showRoute = (route: Route) => {if (route.page === 'Users' && route.id) setUserLookup({query:route.id,login:route.id});};
+  const open = (route: Route) => {showRoute(route);setHistory(history => [...history,route]);};
+  const back = () => {
+    if (history.length > 1) showRoute(history[history.length - 2]);
+    setHistory(history => history.length > 1 ? history.slice(0,-1) : [{page}]);
+  };
+  const openUser = (login: string) => open({page:'Users',id:login});
   const backLabel = `Back to ${history[history.length - 2]?.page ?? page}`;
   const [dark, setDark] = useState(document.documentElement.dataset.colorMode === 'dark');
   useEffect(() => {
@@ -172,7 +191,8 @@ function App() {
     observer.observe(document.body, {attributes: true, attributeFilter: ['data-color-mode']});
     return () => observer.disconnect();
   }, []);
-  return <ThemeProvider colorMode={dark ? 'night' : 'day'}><BaseStyles className="canvas-shell">
+  const links = {host: startup?.target?.host ?? null, enterprise: startup?.target?.enterprise ?? null, openUser};
+  return <ThemeProvider colorMode={dark ? 'night' : 'day'}><ResourceLinksProvider value={links}><BaseStyles className="canvas-shell">
     <header className="header"><div className="brand"><span className="brand-mark" aria-hidden="true"><CopilotIcon size={28} /></span><div><h1>GitHub FinOps</h1><span className="muted">Enterprise spending and configuration</span></div></div></header>
     <div className={`app-layout${startup?.hasOverview ? '' : ' onboarding-layout'}`}>{startup?.hasOverview && <aside className="sidebar"><nav aria-label="Main navigation">{([
       {name: 'Overview', icon: GraphIcon}, {name: 'Cost Centers', icon: OrganizationIcon},
@@ -181,18 +201,19 @@ function App() {
     ] satisfies {name: Page; icon: typeof GraphIcon}[]).map(item => <Button key={item.name} block variant="invisible" alignContent="start" leadingVisual={item.icon} aria-current={page === item.name ? 'page' : undefined} onClick={() => setHistory([{page:item.name}])}>{item.name}</Button>)}</nav></aside>}
       <div className="page-scroll" tabIndex={0} role="region" aria-label={startup?.hasOverview ? `${page} page content` : 'Connect your enterprise'} key={`${startup?.hasOverview}-${page}-${route.id ?? ''}`}>
       {!startup ? <main><h2>GitHub FinOps</h2><p role="status">Reading local startup information...</p></main> : !startup.hasOverview ?
-        <Onboarding startup={startup} connected={() => setStartup({...startup,hasOverview:true})} /> :
-      page === 'Overview' ? <OverviewPage openBudget={id => open({page:'Budgets',id})} /> : page === 'Settings' ? <Settings updates={updates.status} updateError={updates.error} cleared={() => {
+        <Onboarding startup={startup} connected={target => setStartup({...startup,target:target ?? startup.target,hasOverview:true})} /> :
+      page === 'Overview' ? <OverviewPage openBudget={id => open({page:'Budgets',id})} openUser={openUser} /> : page === 'Settings' ? <Settings updates={updates.status} updateError={updates.error} cleared={() => {
         setUserLookup({query:'',login:null});setCenterList({query:'',page:1});setBudgetList({query:'',page:1});
         setHistory([{page:'Overview'}]);setStartup({...startup,hasOverview:false,error:null});
       }} /> : page === 'Cost Centers' ?
         <CostCenters selected={route.id} list={centerList} setList={setCenterList} select={id => open({page:'Cost Centers',id})} back={back} backLabel={backLabel} openBudget={id => open({page:'Budgets',...(id ? {id} : {})})} /> :
-        page === 'Budgets' ? <Budgets selected={route.id} list={budgetList} setList={setBudgetList} select={id => open({page:'Budgets',id})} back={back} backLabel={backLabel} canGoBack={history.length > 1} openCenter={id => open({page:'Cost Centers',id})} /> :
-        <Users lookup={userLookup} setLookup={setUserLookup} openCenter={id => open({page:'Cost Centers',id})} openBudget={id => open({page:'Budgets',id})} />}
+        page === 'Budgets' ? <Budgets selected={route.id} list={budgetList} setList={setBudgetList} skuFilter={skuFilter} select={id => open({page:'Budgets',id})} back={back} backLabel={backLabel} canGoBack={history.length > 1} openCenter={id => open({page:'Cost Centers',id})} /> :
+        <Users lookup={userLookup} setLookup={setUserLookup} openCenter={id => open({page:'Cost Centers',id})} openBudget={id => open({page:'Budgets',id})}
+          {...(history.length > 1 ? {back, backLabel} : {})} />}
       </div>
     </div>
     <UpdateReminder status={updates.error ? null : updates.status} changed={updates.setStatus} />
-  </BaseStyles></ThemeProvider>;
+  </BaseStyles></ResourceLinksProvider></ThemeProvider>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

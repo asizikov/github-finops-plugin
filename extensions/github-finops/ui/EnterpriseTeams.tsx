@@ -1,6 +1,7 @@
 import {useState} from 'react';
 import {Button, Flash} from '@primer/react';
 import {useSnapshot, SnapshotStatus, RefreshButton} from './Snapshot';
+import {TeamLink} from './ResourceLinks';
 import type {EnterpriseTeamsData, Membership} from './user-format.mjs';
 
 function TeamCostCenters({slug, openCenter}: {slug: string; openCenter: (id: string) => void}) {
@@ -28,7 +29,7 @@ export default function EnterpriseTeams({data, cached, disabled, refresh, openCe
     {data?.fetchedAt && <p className="caption">Teams last read {new Date(data.fetchedAt).toLocaleString()}.{(cached || data.error) && ' Saved team membership may be stale.'}</p>}
     {data?.items && (data.items.length ? <div className="user-memberships">{data.items.map(team =>
       <div className="team-item" key={team.id}>
-        <h4><a className="row-link" href={team.htmlUrl} target="_blank" rel="noreferrer">{team.name}</a></h4>
+        <h4><TeamLink htmlUrl={team.htmlUrl}>{team.name}</TeamLink></h4>
         <p className="caption">{team.slug} / Team ID {team.id}</p>
         <Button size="small" onClick={() => setSelected(selected === team.slug ? null : team.slug)} aria-expanded={selected === team.slug}>
           {selected === team.slug ? 'Hide cost centers' : 'View cost centers'}
