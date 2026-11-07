@@ -21,6 +21,7 @@ export type UniversalUsers = {
 export function buildUniversalAttention(data: UniversalUsers, now?: number | string | Date): {
     rows: AttentionRow[]; coverage: {total: number; comparable: number; unavailable: number};
 };
+export function mergeUserAttentionRows(budgetRows: AttentionRow[], userRows: AttentionRow[]): AttentionRow[];
 export function expirationDays(expiresAt: string | null | undefined, now?: number | string | Date): number | null;
 export function buildAttentionQueue(budgets: BudgetRecord[], now?: number | string | Date): {
     rows: AttentionRow[]; coverage: {total: number; comparable: number; unavailable: number};

@@ -1,7 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {loadUniversalUsers} from "./universal-users.mjs";
-import {buildUniversalAttention, buildAttentionQueue} from "./attention.mjs";
+import {buildUniversalAttention, buildAttentionQueue, mergeUserAttentionRows} from "./attention.mjs";
 
 const config = {enterprise: "example-enterprise", host: "github.com"};
 const raw = {id: "universal", budget_scope: "multi_user_customer", budget_type: "BundlePricing",
@@ -90,4 +90,16 @@ test("deduplication keeps different control and SKU risks for the same user", ()
     const result = buildUniversalAttention(data([state(),state(),state({budgetId:"another"})],[control,other]), now);
     assert.equal(result.rows.length, 2);
     assert.notEqual(result.rows[0].key, result.rows[1].key);
+});
+
+test("user-state override signals replace duplicate budget usage without losing expiry or other SKU risks", () => {
+    const override = {...control,id:"override",scope:"user",user:"octocat",amount:10,consumed:9,expiresAt:"2026-11-08"};
+    const other = {...override,id:"other",product:"copilot_ai_credit",type:"SkuPricing"};
+    const budgetRows = buildAttentionQueue([override,other],now).rows;
+    const userRows = buildUniversalAttention(data([state({consumed:9,target:10,overrideBudgetId:"override"})],[control,override]),now).rows;
+    const rows = mergeUserAttentionRows(budgetRows,userRows);
+    assert.equal(rows.length,2);
+    assert.equal(rows.filter(row=>row.budget.product==="ai_credits").length,1);
+    assert.ok(rows.find(row=>row.user)?.reasons.some(reason=>reason.code==="override-expiring"));
+    assert.ok(rows.some(row=>row.budget.id==="other"));
 });

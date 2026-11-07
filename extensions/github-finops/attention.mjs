@@ -120,6 +120,14 @@ export function buildUniversalAttention(data, now = Date.now()) {
     return {rows, coverage: {total: data.states.length, comparable, unavailable: data.states.length - comparable}};
 }
 
+export function mergeUserAttentionRows(budgetRows, userRows) {
+    const key = (id, budget, user) => JSON.stringify([id, budget.type, budget.product, user?.toLowerCase()]);
+    const overrides = new Set(userRows.filter(row => row.overrideBudgetId)
+        .map(row => key(row.overrideBudgetId, row.budget, row.user)));
+    return [...budgetRows.filter(row => !overrides.has(key(row.budget.id, row.budget, row.budget.user))), ...userRows]
+        .sort((a, b) => Number(b.severity === "critical") - Number(a.severity === "critical"));
+}
+
 export function paginateAttention(rows, scope, product, page) {
     return paginateItems(rows.filter(({budget}) => (!scope || budget.scope === scope) &&
         (!product || budget.product === product)), page);

@@ -1,6 +1,6 @@
 import {Button, FormControl, Label, Select} from '@primer/react';
 import {useState} from 'react';
-import {buildAttentionQueue, buildUniversalAttention, mergeAttentionBudgets, paginateAttention, type UniversalUsers} from '../attention.mjs';
+import {buildAttentionQueue, buildUniversalAttention, mergeAttentionBudgets, mergeUserAttentionRows, paginateAttention, type UniversalUsers} from '../attention.mjs';
 import {budgetAmount, budgetEntity, scopeLabel, type BudgetRecord} from './budget-format.mjs';
 import {SnapshotStatus, useSnapshot} from './Snapshot';
 
@@ -20,9 +20,7 @@ export default function AttentionQueue({openBudget, openUser}: {openBudget: (id:
       !useUserList || Date.parse(budget.fetchedAt) > userListTime));
   const queue = buildAttentionQueue(budgets, state.now);
   const userQueue = users.snapshot ? buildUniversalAttention(users.snapshot.data, users.now) : null;
-  const rows = [...queue.rows.filter(row => !userQueue?.rows.some(userRow =>
-    userRow.overrideBudgetId === row.budget.id && userRow.user?.toLowerCase() === row.budget.user?.toLowerCase())),
-    ...(userQueue?.rows ?? [])].sort((a,b) => Number(b.severity === 'critical') - Number(a.severity === 'critical'));
+  const rows = mergeUserAttentionRows(queue.rows, userQueue?.rows ?? []);
   const result = paginateAttention(rows, scope, product, page);
   const scopes = [...new Set(budgets.map(budget => budget.scope))].sort();
   const products = [...new Set(budgets.map(budget => budget.product))].sort();
