@@ -10,17 +10,22 @@ export default function AttentionQueue({openBudget, openUser}: {openBudget: (id:
   const [scope, setScope] = useState('');
   const [product, setProduct] = useState('');
   const [page, setPage] = useState(1);
-  const budgets = state.snapshot ? mergeAttentionBudgets(state.snapshot.data, state.snapshot.cache.fetchedAt,
-    state.snapshot.relationships?.budgets) : [];
+  const useUserList = users.snapshot && (!state.snapshot ||
+    Date.parse(users.snapshot.cache.fetchedAt) >= Date.parse(state.snapshot.cache.fetchedAt));
+  const list = useUserList ? users.snapshot : state.snapshot;
+  const listBudgets = useUserList && users.snapshot ? users.snapshot.data.budgets : state.snapshot?.data ?? [];
+  const userListTime = Date.parse(users.snapshot?.cache.fetchedAt ?? '');
+  const budgets = mergeAttentionBudgets(listBudgets, list?.cache.fetchedAt ?? '',
+    state.snapshot?.relationships?.budgets.filter(budget =>
+      !useUserList || Date.parse(budget.fetchedAt) > userListTime));
   const queue = buildAttentionQueue(budgets, state.now);
   const userQueue = users.snapshot ? buildUniversalAttention(users.snapshot.data, users.now) : null;
   const rows = [...queue.rows.filter(row => !userQueue?.rows.some(userRow =>
     userRow.overrideBudgetId === row.budget.id && userRow.user?.toLowerCase() === row.budget.user?.toLowerCase())),
     ...(userQueue?.rows ?? [])].sort((a,b) => Number(b.severity === 'critical') - Number(a.severity === 'critical'));
   const result = paginateAttention(rows, scope, product, page);
-  const allBudgets = [...budgets, ...(users.snapshot?.data.budgets ?? [])];
-  const scopes = [...new Set(allBudgets.map(budget => budget.scope))].sort();
-  const products = [...new Set(allBudgets.map(budget => budget.product))].sort();
+  const scopes = [...new Set(budgets.map(budget => budget.scope))].sort();
+  const products = [...new Set(budgets.map(budget => budget.product))].sort();
   return <section className="attention-section" aria-labelledby="attention-heading">
     <div className="overview-heading">
       <div><h3 id="attention-heading">Attention queue</h3><p className="muted">Budget risks and individual universal-budget usage.</p></div>
@@ -32,7 +37,7 @@ export default function AttentionQueue({openBudget, openUser}: {openBudget: (id:
     <p className="section-intro">Reload reads local cache only. Load / Refresh user states explicitly reads budget controls and paginated per-user states, not profiles or a member directory.</p>
     {!users.snapshot && !users.loading && <p className="field-note">Universal per-user usage has not been loaded for this account and UTC billing month. No user-level health conclusion is available.</p>}
     {users.snapshot && <p className="field-note">User states: {users.snapshot.data.period.year}-{String(users.snapshot.data.period.month).padStart(2,'0')} UTC; {users.snapshot.data.coverage.controls} universal controls, {users.snapshot.data.coverage.records} returned states; {userQueue?.coverage.comparable} have an identifiable user and comparable reported target. {users.snapshot.data.coverage.unidentified} have no user identity. Active users appear gradually each billing cycle; this is not a licensed-user roster. At most 2,000 records per control are read; incomplete refreshes retain the last successful snapshot.</p>}
-    {!state.loading && !state.snapshot && !state.error && <p className="empty-results">No saved budget list. Open Budgets and load a snapshot first.</p>}
+    {!state.loading && !state.snapshot && !users.snapshot && !state.error && <p className="empty-results">No saved budget list. Open Budgets or load universal user states first.</p>}
     {(state.snapshot || users.snapshot) && <>
       <div className="filter-bar">
         <FormControl><FormControl.Label>Scope</FormControl.Label>

@@ -192,7 +192,8 @@ filters use the universal denominator even when overrides apply, so filtering at
 90% would miss lower override targets. Signals instead compare `consumed_amount`
 with the returned `target_amount`, show the universal baseline separately, and
 label overrides/differing targets without claiming a universal cap is effective.
-An expired saved override requires refresh; an unknown target can only produce an
+An expired saved override or a target conflicting with a saved individual override
+requires refresh; an unknown target can only produce an
 explicitly unverified universal-baseline warning, never an exhausted-limit claim.
 Unidentified states cannot link to Users and are counted in coverage.
 

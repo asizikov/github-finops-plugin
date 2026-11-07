@@ -78,7 +78,7 @@ function BudgetCard({budget}: {budget: Budget}) {
         budget.alerts === true ? 'Alert only' : 'No hard stop') : 'Not configured'}</Label>
     </div>
     <p className="muted">{perUser ? 'Enterprise-wide default for each user. Individual and cost center per-user budgets take precedence.' : 'The enterprise-wide spending budget for AI Credits.'}</p>
-    {budget.configured && <p className="caption">{record.product} / {record.type}</p>}
+    {budget.configured && <p className="caption">{record.product} / {record.type}{budget.id && <> / {budget.id}</>}</p>}
     {!budget.configured ? <div className="unconfigured"><strong>No budget configured</strong><p className="muted">GitHub returned no matching {perUser ? 'universal per-user' : 'AI Credits enterprise'} budget for this scope. This does not imply a zero budget.</p></div> : <>
       <div className="amount">{budgetAmount(budget.amount ?? null,record)} <span>{perUser ? '/ user' : ''}</span></div>
       <div className="consumption">

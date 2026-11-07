@@ -87,7 +87,10 @@ export function buildUniversalAttention(data, now = Date.now()) {
         const override = allBudgets.get(state.overrideBudgetId);
         const expired = override?.expiresAt && Number.isFinite(Date.parse(override.expiresAt)) &&
             Date.parse(override.expiresAt.length === 10 ? `${override.expiresAt}T23:59:59.999Z` : override.expiresAt) < new Date(now).getTime();
-        const knownTarget = validAmount(state.target) && !expired;
+        const conflict = override?.scope === "user" && override.user?.toLowerCase() === state.user.toLowerCase() &&
+            override.type === control.type && override.product === control.product &&
+            validAmount(override.amount) && validAmount(state.target) && override.amount !== state.target;
+        const knownTarget = validAmount(state.target) && !expired && !conflict;
         const limit = knownTarget ? state.target : control.amount;
         if (!budgetUnit(control) || !validAmount(state.consumed) || !validAmount(limit)) continue;
         if (knownTarget) comparable++;
@@ -100,6 +103,7 @@ export function buildUniversalAttention(data, now = Date.now()) {
             user: state.user, key, universalAmount: control.amount, targetAmount: state.target,
             overrideBudgetId: state.overrideBudgetId,
             applicability: expired ? "Saved override has expired; refresh to resolve the current limit." :
+                conflict ? "Reported target conflicts with the saved individual override; current limit unverified. Refresh this user to resolve." :
                 !knownTarget ? "Reported target unavailable; universal baseline only, applicability unverified." :
                 universal ? "Reported per-user target matches the universal baseline; no override ID returned." :
                 state.overrideBudgetId ? "Reported per-user target with an override; not the universal cap." :

@@ -78,6 +78,11 @@ test("reported override and cost-center targets, not the universal denominator, 
     const stale = buildUniversalAttention(data([state({consumed:100,target:10,overrideBudgetId:"override"})],[control,expired]), now);
     assert.match(stale.rows[0].applicability, /expired/);
     assert.equal(stale.rows[0].severity, "warning");
+    const conflicting = {...control,id:"override",scope:"user",user:"octocat",amount:200};
+    const uncertain = buildUniversalAttention(data([state({consumed:100,target:100,overrideBudgetId:"override"})],[control,conflicting]),now);
+    assert.match(uncertain.rows[0].applicability,/conflicts/);
+    assert.equal(uncertain.rows[0].severity,"warning");
+    assert.equal(uncertain.coverage.comparable,0);
 });
 
 test("deduplication keeps different control and SKU risks for the same user", () => {
