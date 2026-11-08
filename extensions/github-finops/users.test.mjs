@@ -33,6 +33,11 @@ function reader({members = membership, pages = [page()], detail = userBudget, te
         if (path.includes("/memberships?")) return members;
         if (path.includes("/budgets?")) return pages[Number(new URL(`https://example.test${path}`).searchParams.get("page")) - 1];
         if (path.includes("/teams?")) return teams;
+        if (path.includes("/ai_credit/usage?")) {
+            const query = new URL(`https://example.test${path}`).searchParams;
+            return {timePeriod:{year:Number(query.get("year")),month:Number(query.get("month"))},enterprise:config.enterprise,
+                user:query.get("user"),usageItems:[{unitType:"ai-credits",grossAmount:4,discountAmount:3,netAmount:1}]};
+        }
         if (path.includes("/cost-centers/center-one?")) return {id:"center-one",name:"Engineering",
             state:"active",resources:[{type:"User",name:login}],has_next_page:false};
         return detail;
@@ -74,8 +79,10 @@ test("resolves identity, memberships and every user-budget page with targeted at
     assert.equal(result.filterVerified,true);
     assert.equal(result.budgets.length,2);
     assert.deepEqual(result.period,{year:2025,month:1});
-    assert.equal(calls.length,6);
+    assert.equal(calls.length,7);
     assert.match(calls[3],/user=sample-user&per_page=100&page=2$/);
+    assert.match(calls.at(-1),/ai_credit\/usage\?year=2025&month=1&user=sample-user$/);
+    assert.deepEqual([result.spending.status,result.spending.user,result.spending.net],["available","sample-user",1]);
 });
 
 test("user identity, membership identity and non-progressing or changing budget pages fail explicitly", async () => {
@@ -202,9 +209,9 @@ test("cached normalized user searches and restart persistence make zero GitHub c
     const {cache,store,source,path} = cachedSetup(t);
     const result = await cache.get(config,{resource:"user",id:" @Sample-User "});
     assert.equal(result.cache.source,"live");
-    assert.equal(source.calls.length,5);
+    assert.equal(source.calls.length,6);
     assert.equal((await cache.get(config,{resource:"user",id:"SAMPLE-USER"})).cache.source,"cached");
-    assert.equal(source.calls.length,5);
+    assert.equal(source.calls.length,6);
     assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM relationship_budgets").get().n,0);
     const script = `
       import {SnapshotStore,OverviewCache} from ${JSON.stringify(new URL("./cache.mjs",import.meta.url).href)};
@@ -234,7 +241,7 @@ test("user cache isolates login, host, enterprise, account and billing month", a
     assert.equal((await cache.get(config,{...options,id:"renamed-alias"})).cache.source,"live");
     state.now = new Date("2025-02-01T00:00:00Z");
     assert.equal((await cache.get(config,options)).data.period.month,2);
-    assert.equal(state.attempts,30);
+    assert.equal(state.attempts,36);
 });
 
 const team = (id = 1) => ({id, name:`Team ${id}`, slug:`ent:team-${id}`,
@@ -335,6 +342,32 @@ test("failed and rate-limited team refreshes persist last-good teams without rep
     assert.equal(changedIdentity.data.enterpriseTeams.items,null);
     assert.equal(changedIdentity.data.enterpriseTeams.fetchedAt,null);
     assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM relationship_centers").get().n,0);
+});
+
+test("failed usage report refresh keeps the same user's last-good month report, never another identity's", async t => {
+    t.mock.method(console,"error",() => {});
+    const {cache,state} = cachedSetup(t);
+    const source = reader();
+    let failing = false;
+    let profileId = profile.id;
+    cache.read = async path => {
+        state.attempts++;
+        if (failing && path.includes("/ai_credit/usage?")) throw new GitHubReadError("Denied",null,403);
+        if (path.startsWith("/users/")) return {...profile,id:profileId};
+        return source.read(path);
+    };
+    const options = {resource:"user",id:login};
+    assert.equal((await cache.get(config,options)).data.spending.net,1);
+    state.now = new Date("2025-01-03T00:00:00Z");
+    failing = true;
+    const failed = await cache.get(config,{...options,refresh:true});
+    assert.equal(failed.data.spending.net,1);
+    assert.match(failed.data.spending.retainedAfterError,/Access denied/);
+    profileId = 99;
+    state.now = new Date("2025-01-03T00:05:00Z");
+    const changed = await cache.get(config,{...options,refresh:true});
+    assert.equal(changed.data.spending.status,"error");
+    assert.equal(changed.data.spending.net,undefined);
 });
 
 test("older user snapshots do not fetch teams until explicit refresh, and negative team results are cached", async t => {

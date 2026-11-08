@@ -8,6 +8,7 @@ export type Attribution = {
     status: 'confirmed' | 'provisional' | 'unresolved'; method: string; center: AttributionCenter | null;
     reason: string; checkedAt: string; invalidatedAt?: string; unresolved: string[];
     lastConfirmed?: {center: AttributionCenter | null; method: string; checkedAt: string} | null;
+    via?: {kind: 'team'; name: string; slug: string; htmlUrl: string | null} | {kind: 'organization'; name: string} | null;
     evidence: {checkedAt: string; direct: EvidenceCheck; teams: EvidenceCheck; license: EvidenceCheck};
     alternatives: {method: string; name?: string; slug?: string; htmlUrl?: string; center?: AttributionCenter;
         centers?: AttributionCenter[]; createdAt?: string | null; reason: string}[];
@@ -22,7 +23,13 @@ export type UserData = {
     effective: {id: string; amount: number | null; consumed: number | null} | null;
     enterpriseTeams?: EnterpriseTeamsData;
     attribution?: Attribution;
+    spending?: UserSpending;
 };
+type SpendingPeriod = {period: {year: number; month: number}; checkedAt?: string; retainedAfterError?: string};
+export type UserSpending = SpendingPeriod & (
+    | {status: 'available'; user: string; gross: number; discount: number; net: number}
+    | {status: 'none_reported'; user: string; message: string}
+    | {status: 'error'; message: string; denied?: boolean; retryAt: string | null});
 type CenterMatch = Membership & {matchedBy: 'id' | 'exact_unique_name'};
 export function normalizeUsername(value: string): string;
 export function userBudgetEnforcement(budget: BudgetRecord): string;

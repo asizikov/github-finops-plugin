@@ -19,9 +19,9 @@ export function evidenceFailure(error) {
 export function resolveAttribution(evidence) {
     const alternatives = [];
     const unresolved = [];
-    const result = (method, center, reason, confirmed = true) => ({
+    const result = (method, center, reason, confirmed = true, via = null) => ({
         status: confirmed ? "confirmed" : center ? "provisional" : "unresolved",
-        method, center, reason, checkedAt: evidence.checkedAt, alternatives, unresolved,
+        method, center, reason, checkedAt: evidence.checkedAt, alternatives, unresolved, via,
     });
     const direct = evidence.direct;
     for (const candidate of direct.candidates ?? []) alternatives.push({...candidate,
@@ -61,7 +61,8 @@ export function resolveAttribution(evidence) {
             if (alternative.centers.length) alternative.reason = alternative.slug === winner.team.slug
                 ? "Selected: oldest qualifying team." : "Not selected: a qualifying team was created earlier.";
         }
-        return result("team", winner.center, `Oldest qualifying enterprise team: ${winner.team.name} (${winner.team.createdAt}).`);
+        return result("team", winner.center, `Oldest qualifying enterprise team: ${winner.team.name} (${winner.team.createdAt}).`, true,
+            {kind: "team", name: winner.team.name, slug: winner.team.slug, htmlUrl: winner.team.htmlUrl ?? null});
     }
 
     const license = evidence.license;
@@ -77,7 +78,8 @@ export function resolveAttribution(evidence) {
     }
     const organization = license.organizations?.[0];
     if (organization?.centers.length === 1) return result("organization", organization.centers[0],
-        `Only one Copilot license organization was returned: ${organization.name}; it is assigned to this center.`);
+        `Only one Copilot license organization was returned: ${organization.name}; it is assigned to this center.`, true,
+        {kind: "organization", name: organization.name});
     return result("enterprise", null, "All higher-priority checks completed; no applicable cost center assignment was found.");
 }
 

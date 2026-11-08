@@ -5,6 +5,7 @@ import {normalizeUsername} from "./ui/user-format.mjs";
 import {loadResourceMemberships} from "./memberships.mjs";
 import {loadEnterpriseTeams, enterpriseTeamFailure} from "./enterprise-teams.mjs";
 import {collectAttribution, evidenceFailure} from "./attribution.mjs";
+import {loadUserSpending} from "./spending.mjs";
 
 async function userRead(read, path, host, stage) {
     try { return await read(path, host); } catch (error) {
@@ -85,7 +86,8 @@ export async function loadUser({enterprise, host}, read, username, now = new Dat
         enterpriseTeams = enterpriseTeamFailure(error);
     }
     const attribution = await collectAttribution({enterprise, host}, read, login, membershipEvidence, enterpriseTeams, now);
-    return {login: profile.login, id: profile.id, accountType: profile.type, enterpriseTeams, attribution,
+    const spending = await loadUserSpending({enterprise, host}, read, login, now);
+    return {login: profile.login, id: profile.id, accountType: profile.type, enterpriseTeams, attribution, spending,
         period: {year: now.getUTCFullYear(), month: now.getUTCMonth() + 1},
         memberships, budgets, effective, effectiveStatus, filterVerified};
 }
