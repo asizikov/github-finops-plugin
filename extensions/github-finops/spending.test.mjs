@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeSpending, loadSpending } from "./spending.mjs";
+import { normalizeSpending, loadSpending, loadUserSpending } from "./spending.mjs";
 
 const period = { year: 2025, month: 1 };
 const row = (grossAmount, discountAmount, netAmount) => ({
@@ -52,4 +52,26 @@ test("requests the UTC billing month without narrowing enterprise allocation sco
     assert.equal(request.path, "/enterprises/example-enterprise/settings/billing/ai_credit/usage?year=2025&month=1");
     assert.equal(request.host, "github.com");
     assert.deepEqual(result.period, period);
+});
+
+test("user reports require the echoed user filter and an empty user report is not zero", async () => {
+    const userReport = (user, items = [row(4, 3, 1)]) => ({ ...report(items), user });
+    assert.equal(normalizeSpending(userReport("Sample-User"), period, "sample-user").net, 1);
+    for (const echoed of [undefined, "other-user"]) assert.throws(() => normalizeSpending(userReport(echoed), period, "sample-user"), /confirm/);
+    assert.throws(() => normalizeSpending({ ...userReport("sample-user"), organization: "example-org" }, period, "sample-user"));
+    const empty = normalizeSpending(userReport("sample-user", []), period, "sample-user");
+    assert.equal(empty.status, "none_reported");
+    assert.equal(empty.net, undefined);
+    let path;
+    const loaded = await loadUserSpending({ enterprise: "example-enterprise", host: "github.com" }, async value => {
+        path = value; return userReport("sample-user");
+    }, "sample-user", new Date("2025-01-15T00:00:00Z"));
+    assert.equal(path, "/enterprises/example-enterprise/settings/billing/ai_credit/usage?year=2025&month=1&user=sample-user");
+    assert.equal(loaded.status, "available");
+    const denied = await loadUserSpending({ enterprise: "example-enterprise", host: "github.com" }, async () => {
+        throw Object.assign(new Error("Forbidden"), { status: 403 });
+    }, "sample-user", new Date("2025-01-15T00:00:00Z"));
+    assert.equal(denied.status, "error");
+    assert.equal(denied.denied, true);
+    assert.equal(denied.net, undefined);
 });

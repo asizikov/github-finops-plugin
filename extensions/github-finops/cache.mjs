@@ -365,6 +365,14 @@ export class OverviewCache {
                     live.enterpriseTeams = {...live.enterpriseTeams, items: retained.items, fetchedAt: retained.fetchedAt};
                 }
             }
+            if (resource === "user" && live.spending?.status === "error") {
+                const retainedUser = (this.store.get(key) ?? cached)?.data;
+                const previous = retainedUser?.id === live.id ? retainedUser.spending : null;
+                if (previous && previous.status !== "error" && previous.period?.year === live.spending.period.year &&
+                    previous.period?.month === live.spending.period.month) {
+                    live.spending = {...previous, retainedAfterError: live.spending.message};
+                }
+            }
             if (resource === "user" && live.attribution.status !== "confirmed") {
                 const retainedUser = (this.store.get(key) ?? cached)?.data;
                 const previous = retainedUser?.id === live.id ? retainedUser.attribution : null;

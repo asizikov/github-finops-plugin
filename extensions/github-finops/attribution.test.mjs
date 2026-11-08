@@ -37,6 +37,7 @@ test("only qualifying teams participate; oldest creation time wins, with no arbi
     const teams = {state:"complete",items};
     const result = resolve({teams});
     assert.equal(result.center.id,"old-center");
+    assert.deepEqual([result.via.kind,result.via.slug],["team","older"]);
     assert.match(result.alternatives.find(item => item.slug === "unassigned").reason,/No cost center/);
     assert.match(result.alternatives.find(item => item.slug === "newer").reason,/earlier/);
     items[1].createdAt = items[2].createdAt;
@@ -68,6 +69,8 @@ test("sole license organization can win; ambiguous, hidden or team-only seats ca
     const organization = {name:"example-org",state:"complete",centers:[center("org-center")]};
     assert.equal(resolve({license:{state:"complete",organizations:[organization]}}).method,"organization");
     assert.equal(resolve({license:{state:"complete",organizations:[organization]}}).center.id,"org-center");
+    assert.deepEqual(resolve({license:{state:"complete",organizations:[organization]}}).via,{kind:"organization",name:"example-org"});
+    assert.equal(resolve({}).via,null);
     for (const license of [
         {state:"unavailable",reason:"Denied"},
         {state:"complete",unaffiliated:true,organizations:[]},

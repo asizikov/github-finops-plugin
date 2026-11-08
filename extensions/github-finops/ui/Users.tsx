@@ -7,6 +7,7 @@ import {normalizeUsername, resolveUserBudgets, userBudgetEnforcement, type UserD
 import EnterpriseTeams from './EnterpriseTeams';
 import UserBudgetExplanation from './UserBudgetExplanation';
 import UserAttribution from './UserAttribution';
+import UserBudgetCard from './UserBudgetCard';
 
 export type UserLookup = {query: string; login: string | null};
 type Navigation = {openCenter: (id: string) => void; openBudget: (id: string) => void};
@@ -15,13 +16,14 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
   const user = state.snapshot?.data;
   const relationships = state.snapshot?.relationships;
   const impact = user ? resolveUserBudgets(user, relationships) : null;
-  const month = user ? new Intl.DateTimeFormat(undefined, {month:'long',year:'numeric',timeZone:'UTC'})
-    .format(new Date(Date.UTC(user.period.year,user.period.month - 1))) : '';
   return <section aria-label="User lookup result">
     <div className="user-result-heading"><h3>{user ? `@${user.login}` : `@${login}`}</h3><RefreshButton state={state} /></div>
     <SnapshotStatus state={state} />
     {user && impact && <div aria-busy={state.loading}>
-      <p className="field-note">{month} / {user.accountType} / Budget-tracked amounts in USD, not credit quantities or net billed spending.</p>
+      <UserBudgetCard user={user} relationships={relationships} cache={state.snapshot?.cache} now={Date.now()}
+        openCenter={openCenter} openBudget={openBudget} />
+      <details className="evidence-details"><summary>Evidence and all budget details</summary>
+      <p className="field-note">{user.accountType} account / Budget-tracked amounts in USD, not credit quantities or net billed spending.</p>
       <UserAttribution user={user} relationships={relationships} cached={state.snapshot?.cache.source === 'cached'}
         openCenter={openCenter} openBudget={openBudget} />
       <section className="resource-section"><h3>Cost center memberships</h3>
@@ -78,6 +80,7 @@ function UserResult({login, openCenter, openBudget}: {login: string} & Navigatio
           <p>Organization/repository billing assignment and additional guardrails are not resolved. Other product budgets are not treated as controls on the AI Credits bundle.</p>
         </details>
       </section>
+      </details>
     </div>}
   </section>;
 }

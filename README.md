@@ -26,6 +26,19 @@ seat data. That endpoint accepts existing `read:enterprise` **or**
 broader permissions automatically. Multiple seat-granting organizations do not
 identify the charged organization; use a detailed usage report for that case.
 
+Each user profile opens with a **Budget & spending** card: budget-tracked usage
+against the API-selected per-user cap, the current user → team/organization →
+cost center → enterprise path (unknown or provisional steps are drawn as such,
+and cost center → enterprise is containment, not billing), and per-user caps
+versus shared spending budgets at their owning level. The same lookup/refresh
+also reads the user-filtered AI usage report
+(`/enterprises/{enterprise}/settings/billing/ai_credit/usage?year&month&user`)
+for that UTC month. The response must echo the requested user; gross, included/
+discount and net amounts are shown separately, an empty report is "No usage
+reported" rather than zero, and denied or failed reads stay unavailable (a
+failed refresh keeps the same user's last-good report). Evidence tables remain
+under "Evidence and all budget details".
+
 ## Install
 
 Requires a Copilot app/runtime with canvas extension support and `gh` with
