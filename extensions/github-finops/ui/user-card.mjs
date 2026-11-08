@@ -24,13 +24,22 @@ function route(user, attribution) {
     }
     if (attribution.method === "organization") {
         const via = attribution.via?.kind === "organization" ? attribution.via : null;
-        return via && settled !== "unknown"
-            ? {kind: "organization", label: via.name, state: settled, note: "Sole Copilot license organization; no team assignment applies."}
-            : {kind: "organization", label: "Billing organization unresolved", state: "unknown",
-                note: "Copilot billing organization is ambiguous or incomplete."};
+        return settled === "unknown"
+            ? {kind: "organization", label: "Billing organization unresolved", state: "unknown",
+                note: "Copilot billing organization is ambiguous or incomplete."}
+            : via ? {kind: "organization", label: via.name, state: settled, note: "Sole Copilot license organization; no team assignment applies."}
+                : {kind: "organization", label: "Organization (refresh to name)", state: settled,
+                    note: "Billing organization was not saved in this snapshot."};
     }
     return {kind: "none", label: "No team or organization", state: settled === "active" ? "none" : "unknown",
         note: settled === "active" ? "No qualifying team or license organization assignment." : "Higher-level evidence is incomplete."};
+}
+
+// A confirmed charging center can come from a team or organization, so it may be missing from the user's own memberships.
+export function withAttributionCenter(user) {
+    const center = user.attribution?.status === "confirmed" ? user.attribution.center : null;
+    if (!center || user.memberships.some(item => item.id === center.id)) return user;
+    return {...user, memberships: [...user.memberships, {id: center.id, name: center.name}]};
 }
 
 export function userChain(user, enterprise = null) {

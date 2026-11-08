@@ -6,7 +6,7 @@ import type {RelationshipsData} from './Relationships';
 import {TeamLink, useResourceLinks} from './ResourceLinks';
 import {resolveUserBudgets, type UserData} from './user-format.mjs';
 import {explainUserBudget} from './user-explanation.mjs';
-import {freshness, placeBudgets, userChain, userSpending, userUsage,
+import {freshness, placeBudgets, userChain, userSpending, userUsage, withAttributionCenter,
   type BudgetChip, type ChainLink, type ChainStep, type UserUsage} from './user-card.mjs';
 
 type Props = {user: UserData; relationships?: RelationshipsData; now: number;
@@ -110,7 +110,7 @@ function SpendingCell({spending, now}: {spending: ReturnType<typeof userSpending
 
 export default function UserBudgetCard({user, relationships, cache, now, openCenter, openBudget}: Props) {
   const {enterprise} = useResourceLinks();
-  const impact = resolveUserBudgets(user, relationships);
+  const impact = resolveUserBudgets(withAttributionCenter(user), relationships);
   const chain = userChain(user, enterprise);
   const usage = userUsage(explainUserBudget(user, impact), impact);
   const spending = userSpending(user.spending);

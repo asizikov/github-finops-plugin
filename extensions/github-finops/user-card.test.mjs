@@ -1,6 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {userChain, userUsage, userSpending, placeBudgets} from "./ui/user-card.mjs";
+import {userChain, userUsage, userSpending, placeBudgets, withAttributionCenter} from "./ui/user-card.mjs";
+import {resolveUserBudgets} from "./ui/user-format.mjs";
 
 const center = {id:"center-one", name:"Center one"};
 const attribution = fields => ({status:"confirmed", method:"team", center, unresolved:[], alternatives:[],
@@ -79,4 +80,22 @@ test("budgets sit on their owning level; off-path centers are not drawn on the a
     assert.deepEqual(placed.center.map(chip => [chip.id, chip.kind]), [["cc", "per_user"], ["shared-cc", "shared"]]);
     assert.deepEqual(placed.enterprise.map(chip => chip.id), ["ent", "shared-ent"]);
     assert.deepEqual(placed.other.map(chip => [chip.id, chip.state]), [["cc2", "candidate"]]);
+});
+
+test("saved organization attribution without a name keeps its confirmed state", () => {
+    const chain = userChain(user({attribution:attribution({method:"organization", via:undefined})}));
+    assert.equal(chain.steps[1].state, "active");
+    assert.equal(chain.steps[1].label, "Organization (refresh to name)");
+    assert.equal(chain.links[0].kind, "charges");
+});
+
+test("a confirmed team-assigned center outside user memberships resolves its budgets on the card", () => {
+    const subject = user({login:"sample-user", attribution:attribution(), memberships:[], filterVerified:true,
+        effective:{id:"cc", amount:25, consumed:5}, budgets:[{...budget("cc", "multi_user_cost_center"), entity:"center-one"}]});
+    const relationships = {budgets:[{...budget("shared-cc", "cost_center", 500), entity:"center-one"}], links:[], centers:[], lists:{}};
+    const impact = resolveUserBudgets(withAttributionCenter(subject), relationships);
+    const placed = placeBudgets(impact, userChain(subject));
+    assert.deepEqual(placed.center.map(chip => [chip.id, chip.state]), [["cc", "effective"], ["shared-cc", "shared"]]);
+    assert.deepEqual(placed.other, []);
+    assert.equal(withAttributionCenter(user({attribution:attribution({status:"provisional"}), memberships:[]})).memberships.length, 0);
 });

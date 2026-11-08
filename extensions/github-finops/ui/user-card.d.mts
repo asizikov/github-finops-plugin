@@ -18,6 +18,7 @@ export type UserSpendingView =
 export type BudgetChip = {id: string; kind: 'per_user' | 'shared'; state: 'effective' | 'overridden' | 'candidate' | 'shared';
     scope: string; label: string; centerName: string | null; amount: string; enforcement: string};
 export type PlacedBudgets = Record<'user' | 'center' | 'enterprise' | 'other', BudgetChip[]>;
+export function withAttributionCenter(user: UserData): UserData;
 export function userChain(user: UserData, enterprise?: string | null): UserChain;
 export function userUsage(explanation: ReturnType<typeof explainUserBudget>, impact: Impact): UserUsage;
 export function userSpending(spending: UserData['spending']): UserSpendingView;
